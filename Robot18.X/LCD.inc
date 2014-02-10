@@ -1,0 +1,1 @@
+	extern	LCD_Init,WR_INS,WR_DATA,Clear_LCD
