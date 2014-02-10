@@ -21,7 +21,7 @@ LCD_DELAY macro
 
     ;org and deiaply functions
 	code
-    global  LCD_Init,WR_INS,WR_DATA,Clear_LCD
+    global  LCD_Init,WR_INS,WR_DATA,Clear_LCD,Line1,Line2
 
 ;Initializes LCD for 4-bit input
 ;Sends 0011 three tims to reset LCD, then sets LCD to 4-bit input with 2
@@ -127,6 +127,16 @@ WR_DATA
 	bcf		E				;  |__|
     call    lcdLongDelay
 	return
+
+Line2
+    movlw   b'11000000'
+    call    WR_INS
+    return
+
+Line1
+    movlw   b'10000000'
+    call    WR_INS
+    return
 
 ;delays..C&P
 lcdLongDelay

@@ -1,1 +1,1 @@
-	extern	LCD_Init,WR_INS,WR_DATA,Clear_LCD
+	extern	LCD_Init,WR_INS,WR_DATA,Clear_LCD,Line1,Line2
