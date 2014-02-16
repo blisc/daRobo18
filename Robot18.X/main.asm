@@ -27,6 +27,8 @@ cblock 0x0
 	temp_status
     Machine_state
     Motor_Step
+    Turn_counter
+    Flashlight_counter
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -63,6 +65,8 @@ LogMsg
 	db		"Here be the logs", 0
 RetMsg
 	db		"1: Return", 0
+Number
+    db      "0123456789", 0
 
 ;; MACROS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Display macro label
@@ -82,6 +86,42 @@ Again
 	tblrd+*
 	movf		TABLAT, W
 	bnz         Again
+	endm
+
+BCD_Display macro num
+    local       Overflow1
+    local       Overflow2
+
+;Initializes table pointer
+    movlw		upper Number
+    movwf		TBLPTRU
+	movlw		high Number
+	movwf		TBLPTRH
+
+    ;Offset Table Pointer by BCD
+    movlw		low Number           
+    bcf         STATUS, OV
+    addlw       num
+    movwf		TBLPTRL
+    btfsc       STATUS, OV
+    call        Overflow1
+                                    
+	tblrd*
+	movf		TABLAT, W           ;reads table value
+;Writes to LCD
+    call        WR_DATA
+
+    ;Add if overflow occurs
+Overflow1
+    bcf         STATUS, OV
+    incf        TBLPTRH
+    btfsc       STATUS, OV
+    call        Overflow2
+    return
+
+Overflow2
+    incf        TBLPTRU
+    return
 	endm
 
 ;; MAIN ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -109,7 +149,7 @@ Init
 	clrf		TRISC               ;Set PORTC to output - 3:0 motor
 	clrf		TRISD               ;set PORTD to LCD
     movlw       b'00000011'
-    movwf       TRISA               ;RA0:1 input for sensors, resst output
+    movwf       TRISA               ;RA0:1 input for sensors, rest output
 
     clrf        LATC
     clrf        LATD
@@ -285,4 +325,5 @@ A2D
     call        WR_DATA
     movf        ADRESL,w
     call        WR_DATA
+    BCD_Display b'00000011'
     end

@@ -2,7 +2,6 @@
 
 ;allocates memory for below variables in Data Memory
 	udata
-lcd_tmp	res	1
 lcd_d1	res	1
 lcd_d2	res	1
 com		res	1
