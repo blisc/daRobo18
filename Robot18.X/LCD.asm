@@ -7,6 +7,7 @@ lcd_d1	res	1
 lcd_d2	res	1
 com		res	1
 dat		res	1
+
 ;constans cause Emami be lazy
     #define	RS 	PORTD,2
     #define	E 	PORTD,3
