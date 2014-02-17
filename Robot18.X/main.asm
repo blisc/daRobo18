@@ -29,6 +29,12 @@ cblock 0x0
     Motor_Step
     Turn_counter
     Flashlight_counter
+    BCDL
+    BCDH
+    BCDU
+    COUNT
+    temp1
+    temp2
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -86,11 +92,12 @@ Again
 	tblrd+*
 	movf		TABLAT, W
 	bnz         Again
-	endm
+endm
 
 BCD_Display macro num
     local       Overflow1
     local       Overflow2
+    local       Write
 
 ;Initializes table pointer
     movlw		upper Number
@@ -101,15 +108,11 @@ BCD_Display macro num
     ;Offset Table Pointer by BCD
     movlw		low Number           
     bcf         STATUS, OV
-    addlw       num
+    addwf       num,w
     movwf		TBLPTRL
     btfsc       STATUS, OV
     call        Overflow1
-                                    
-	tblrd*
-	movf		TABLAT, W           ;reads table value
-;Writes to LCD
-    call        WR_DATA
+    goto        Write
 
     ;Add if overflow occurs
 Overflow1
@@ -122,7 +125,37 @@ Overflow1
 Overflow2
     incf        TBLPTRU
     return
-	endm
+
+Write
+    tblrd*
+	movf		TABLAT, W           ;reads table value
+;Writes to LCD
+    call        WR_DATA
+endm
+
+;Bin to BCD convertor from online forum
+BinToBCD macro BINL, BINH
+    local       ConvertBit
+    clrf        BCDL
+    clrf        BCDH
+    clrf        BCDU
+    movlw       d'16'
+    movwf       COUNT
+ConvertBit
+    rlcf        BINL,F      ;C
+    rlcf        BINH,F
+    movf        BCDL,W
+    addwfc      BCDL,W      ;C,DC
+    daw                     ;C
+    movwf       BCDL
+    movf        BCDH,W
+    addwfc      BCDH,W
+    daw
+    movwf       BCDH
+    rlcf        BCDU,F
+    decfsz      COUNT
+    bra         ConvertBit
+endm
 
 ;; MAIN ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Mainline
@@ -325,5 +358,20 @@ A2D
     call        WR_DATA
     movf        ADRESL,w
     call        WR_DATA
-    BCD_Display b'00000011'
-    end
+;;BCD TEST;;;;
+    movlw       b'00010000'
+    movwf       temp1
+    movlw       b'00000000'
+    movwf       temp2
+    BinToBCD    temp1,temp2
+    swapf       BCDL,w
+    andlw       b'00001111'
+    movwf       temp1
+    BCD_Display temp1
+    movf        BCDL,w
+    andlw       b'00001111'
+    movwf       temp1
+    BCD_Display temp1
+    return
+
+end
