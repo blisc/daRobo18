@@ -29,12 +29,15 @@ cblock 0x0
     Motor_Step
     Turn_counter
     Flashlight_counter
+    Step_Counter
+    Zero
     BCDL
     BCDH
     BCDU
     COUNT
-    temp1
-    temp2
+    TempDelay1
+    TempDelay2
+    TempDelay3
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -52,7 +55,7 @@ endc
     movwf       temp_w
 	movf        STATUS,w
 	movwf       temp_status
-    call        ISR_Timer
+    call        ISR_Timer0
     movf        temp_status,w
 	movwf       STATUS
     movf        temp_w,w
@@ -73,6 +76,8 @@ RetMsg
 	db		"1: Return", 0
 Number
     db      "0123456789", 0
+Done
+    db      "Done!!!", 0
 
 ;; MACROS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Display macro label
@@ -167,8 +172,10 @@ Mainline
     Display     Line2Start
 
 Stop
-    nop
+    btfss       Machine_state,1
     goto        Stop                ;END OF CODE
+    call        Start
+    goto        DoneOp
 
 
 ;; INITIALIZATION ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -195,6 +202,9 @@ Init
 
     clrf        Machine_state
     bsf         Machine_state, 0    ;Set machine state to idle
+
+    movlw       b'00000000'
+    movwf       Zero
     return
 
 ;Enables RB1 pin, Sets RB1 to high and TMR0 to low priority
@@ -248,7 +258,7 @@ Check4
     return
     goto        A2D
 
-ISR_Timer
+ISR_Timer0
     bcf         INTCON,TMR0IF
     call        Step
     return
@@ -260,13 +270,49 @@ CheckMachineState
     goto        MenuRet
     clrf        Machine_state
     bsf         Machine_state, 1
+    return
+
+;Start Routine
+Start
     call        Clear_LCD
     call        Line1
     Display     StartMsg
     call        Line2
     Display     RetMsg
-    return
 
+    bsf         Motor_Step,0
+
+    call        MotorForward
+    ;;;;;; Get Data ;;;;;;
+    ;;;;;; Store Data ;;;;;
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorForward
+    call        RanDelay
+
+    call        MotorBackward
+    return
 
 ;Dispay Logs
 Logs
@@ -287,45 +333,65 @@ Motor
     Display     MotorMsg
     call        Line2
     Display     RetMsg
-    bsf         INTCON,GIEL
     bsf         Motor_Step,0
-    call        Step
+    bcf         Motor_Step,7
+    movlw       b'11111111'
+    movwf       Step_Counter
+    bsf         INTCON,GIEL
     bsf         T0CON,TMR0ON
     return
 
 ;Motor_Step: 0001-Step1, 0010-Step2, 0100-Step3, 1000-Step4
 Step
+    dcfsnz      Step_Counter
+    call        Stop_Motor
+
     btfsc       Motor_Step,0
     goto        Step1
     btfsc       Motor_Step,1
     goto        Step2
     btfsc       Motor_Step,2
     goto        Step3
-    btfsc       Motor_Step,3
     goto        Step4
 Step1
     movlw       b'10000001'
     movwf       LATC               ;Set moto to first squence
-    clrf        Motor_Step
-    bsf         Motor_Step,1
-    goto        Step_Done
+    bcf         Motor_Step,0
+    btfsc       Motor_Step,7
+    goto        SetStep4
+    goto        SetStep2
 Step2
     movlw       b'01000100'
     movwf       LATC               ;Set moto to second squence
-    clrf        Motor_Step
-    bsf         Motor_Step,2
-    goto        Step_Done
+    bcf         Motor_Step,1
+    btfsc       Motor_Step,7
+    goto        SetStep1
+    goto        SetStep3
 Step3
     movlw       b'00100010'
     movwf       LATC               ;Set moto to thrid squence
-    clrf        Motor_Step
-    bsf         Motor_Step,3
-    goto        Step_Done
+    bcf         Motor_Step,2
+    btfsc       Motor_Step,7
+    goto        SetStep2
+    goto        SetStep4
 Step4
     movlw       b'00011000'
     movwf       LATC               ;Set moto to fourth squence
-    clrf        Motor_Step
+    bcf         Motor_Step,3
+    btfsc       Motor_Step,7
+    goto        SetStep3
+    goto        SetStep1
+SetStep1
     bsf         Motor_Step,0
+    goto        Step_Done
+SetStep2
+    bsf         Motor_Step,1
+    goto        Step_Done
+SetStep3
+    bsf         Motor_Step,2
+    goto        Step_Done
+SetStep4
+    bsf         Motor_Step,3
     goto        Step_Done
 Step_Done
     return
@@ -334,15 +400,61 @@ Step_Done
 MenuRet
     clrf        Machine_state
     bsf         Machine_state, 0
-    bcf         INTCON,GIEL
-    bcf         T0CON,TMR0ON
-    clrf        LATC
+    call        Stop_Motor
     call        Clear_LCD
     call        Line1
     Display     Line1Start
     call        Line2
     Display     Line2Start
     return
+
+MotorForward
+    movlw       d'24'               ;Step_counter 24 = 36 degrees
+    movwf       Step_Counter
+    bcf         Motor_Step,7        ;Set forward
+    bcf         Motor_Step,6
+    bsf         INTCON,GIEL
+    bsf         T0CON,TMR0ON
+    goto        WaitMotor
+
+MotorBackward
+    movlw       d'216'               ;Step_counter 24 = 36 degrees
+    movwf       Step_Counter
+    bsf         Motor_Step,7        ;Set backward
+    bcf         Motor_Step,6
+    bsf         INTCON,GIEL
+    bsf         T0CON,TMR0ON
+    goto        WaitMotor
+
+WaitMotor
+    btfss       Motor_Step,6        ;Wait for Motor
+    goto        WaitMotor
+    return
+
+Stop_Motor
+    bcf         INTCON,GIEL
+    bcf         T0CON,TMR0ON
+    clrf        LATC
+    bsf         Motor_Step,6
+    return
+
+RanDelay
+    movlw       b'01111111'
+    movwf       TempDelay3
+    movlw       b'11111111'
+RanDelayLoop3
+    movwf       TempDelay2
+RanDelayLoop2
+    movwf       TempDelay1
+RanDelayLoop1
+    decfsz      TempDelay1
+    goto        RanDelayLoop1
+    decfsz      TempDelay2
+    goto        RanDelayLoop2
+    decfsz      TempDelay3
+    goto        RanDelayLoop3
+    return
+
 
 ;A2D module
 A2D
@@ -358,20 +470,12 @@ A2D
     call        WR_DATA
     movf        ADRESL,w
     call        WR_DATA
-;;BCD TEST;;;;
-    movlw       b'00010000'
-    movwf       temp1
-    movlw       b'00000000'
-    movwf       temp2
-    BinToBCD    temp1,temp2
-    swapf       BCDL,w
-    andlw       b'00001111'
-    movwf       temp1
-    BCD_Display temp1
-    movf        BCDL,w
-    andlw       b'00001111'
-    movwf       temp1
-    BCD_Display temp1
     return
 
+DoneOp
+    call        Clear_LCD
+    call        Line1
+    Display     Done
+    clrf        Machine_state
+    goto        Stop
 end
