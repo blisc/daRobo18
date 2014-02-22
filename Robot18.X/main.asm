@@ -166,8 +166,11 @@ endm
 ;; MAIN ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Mainline
     call        Init
-    call        ISR_init
     call        LCD_Init
+    call        RTC_init
+    call        ISR_init
+   
+    banksel     Line1Start
     Display     Line1Start
     call        Line2
     Display     Line2Start
@@ -208,11 +211,12 @@ Init
 
     movlw       b'00000000'
     movwf       Zero
+    return
 
+RTC_init
 ;RTC SET-UP stuFFs
     call 	   i2c_common_setup
-    ;rtc_resetAll
-    ;call	   set_rtc_time
+    call	   set_rtc_time
     return
 
 ;Enables RB1 pin, Sets RB1 to high and TMR0 to low priority
@@ -496,6 +500,8 @@ DoneOp
     clrf        Machine_state
     goto        Stop
 
+
+;;From PML4ALL Writes RTC DATA to LCD
 show_RTC
         call Clear_LCD
 
@@ -515,7 +521,7 @@ show_RTC
 
 		;Get month
 		rtc_read	0x05		;Read Address 0x05 from DS1307---month
-		movwf	0x77
+		movf	0x77,w
 		call	WR_DATA
 		movf	0x78,w
 		call	WR_DATA
@@ -562,17 +568,17 @@ show_RTC
 
 set_rtc_time
 
-		rtc_resetAll	;reset rtc
+		;rtc_resetAll	;reset rtc
 
 		rtc_set	0x00,	B'10000000'
 
 		;set time
-		rtc_set	0x06,	B'00010000'		; Year
-		rtc_set	0x05,	B'00000100'		; Month
-		rtc_set	0x04,	B'00000110'		; Date
-		rtc_set	0x03,	B'00000010'		; Day
+		rtc_set	0x06,	B'00010100'		; Year
+		rtc_set	0x05,	B'00000010'		; Month
+		rtc_set	0x04,	B'00100010'		; Date
+		rtc_set	0x03,	B'00000110'		; Day
 		rtc_set	0x02,	B'00010010'		; Hours
-		rtc_set	0x01,	B'00110000'		; Minutes
+		rtc_set	0x01,	B'00001001'		; Minutes
 		rtc_set	0x00,	B'00000000'		; Seconds
 		return
 end
