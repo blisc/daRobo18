@@ -40,7 +40,7 @@ i2c_common_stop	macro
 ;input: 	none
 ;output:	none
 ;desc:		initiate stop condition on the bus
-	banksel     SSPCON2
+	;banksel     SSPCON2
     bsf         SSPCON2,PEN
     btfsc       SSPCON2,PEN
     goto        $-2
@@ -111,14 +111,14 @@ i2c_common_setup
 ;input:		none
 ;output:	none
 ;desc:		sets up I2C as master device with 100kHz baud rate
-	banksel		SSPSTAT
+	;banksel		SSPSTAT
     clrf        SSPSTAT         ;I2C line levels, and clear all flags
-    movlw       d'24'         	;100kHz baud rate: 10MHz osc / [4*(24+1)]
-	banksel		SSPADD
+    movlw       d'19'         	;100kHz baud rate: 10MHz osc / [4*(24+1)]
+	;banksel		SSPADD
     movwf       SSPADD          ;RTC only supports 100kHz
 
     movlw       b'00001000'     ;Config SSP for Master Mode I2C
-	banksel		SSPCON1
+	;banksel		SSPCON
     movwf       SSPCON1
     bsf         SSPCON1,SSPEN    ;Enable SSP module
     i2c_common_stop        		;Ensure the bus is free
