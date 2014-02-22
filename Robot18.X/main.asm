@@ -186,7 +186,9 @@ Init
 
     movlw       b'11111111'
     movwf       TRISB               ;set PORTB to input - Keypad
-	clrf		TRISC               ;Set PORTC to output - 3:0 motor
+	clrf		TRISC               ;Set PORTC 0:2 and 5:7 as output (0:2 and 5 for motor)
+    bsf         TRISC,3
+    bsf         TRISC,4             ;RC3:4 are inputs for RTC
 	clrf		TRISD               ;set PORTD to LCD
     movlw       b'00000011'
     movwf       TRISA               ;RA0:1 input for sensors, rest output
@@ -354,28 +356,36 @@ Step
     goto        Step3
     goto        Step4
 Step1
-    movlw       b'10000001'
+    movf        PORTC,w
+    andlw       b'00011000'
+    iorlw       b'00100001'
     movwf       LATC               ;Set moto to first squence
     bcf         Motor_Step,0
     btfsc       Motor_Step,7
     goto        SetStep4
     goto        SetStep2
 Step2
-    movlw       b'01000100'
+    movf        PORTC,w
+    andlw       b'00011000'
+    iorlw       b'00000101'
     movwf       LATC               ;Set moto to second squence
     bcf         Motor_Step,1
     btfsc       Motor_Step,7
     goto        SetStep1
     goto        SetStep3
 Step3
-    movlw       b'00100010'
+    movf        PORTC,w
+    andlw       b'00011000'
+    iorlw       b'00000110'
     movwf       LATC               ;Set moto to thrid squence
     bcf         Motor_Step,2
     btfsc       Motor_Step,7
     goto        SetStep2
     goto        SetStep4
 Step4
-    movlw       b'00011000'
+    movf        PORTC,w
+    andlw       b'00011000'
+    iorlw       b'00100010'
     movwf       LATC               ;Set moto to fourth squence
     bcf         Motor_Step,3
     btfsc       Motor_Step,7
