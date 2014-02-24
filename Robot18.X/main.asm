@@ -27,6 +27,7 @@ cblock 0x0
 	temp_w
 	temp_status
     Machine_state
+    Run_state
     Motor_Step
     Turn_counter
     Flashlight_counter
@@ -36,9 +37,14 @@ cblock 0x0
     BCDH
     BCDU
     COUNT
+    TIMEH
+    TIMEL
     TempDelay1
     TempDelay2
     TempDelay3
+    StartTime
+    StopTime
+    TimeOV
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -79,7 +85,8 @@ Number
     db      "0123456789", 0
 Done
     db      "Done!!!", 0
-
+DoneTime
+    db      "Time: ",0
 ;; MACROS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Display macro label
     local       Again
@@ -163,17 +170,26 @@ ConvertBit
     bra         ConvertBit
 endm
 
+BCDToBin macro  bcd
+    swapf   bcd, W
+    andlw   0x0F            ; W= tens
+    rlncf   WREG, W         ; W= 2*tens
+    subwf   bcd, F          ; 16*tens + ones - 2*tens
+    subwf   bcd, F          ; 14*tens + ones - 2*tens
+    subwf   bcd, W          ; 12*tens + ones - 2*tens
+endm
+
 ;; MAIN ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Mainline
     call        Init
     call        LCD_Init
     call        RTC_init
     call        ISR_init
-   
+
+    call        show_RTC
     banksel     Line1Start
-    Display     Line1Start
     call        Line2
-    Display     Line2Start
+    Display     Line1Start
 
 Stop
     btfss       Machine_state,1
@@ -208,6 +224,14 @@ Init
 
     clrf        Machine_state
     bsf         Machine_state, 0    ;Set machine state to idle
+    clrf        Run_state
+    bsf         Run_state,0         ;Set run state to not running
+
+    ;Initialize Timer for RTC display
+    movlw       b'10010100'
+    movwf       TIMEL
+    movlw       b'00000011'
+    movwf       TIMEH
 
     movlw       b'00000000'
     movwf       Zero
@@ -216,14 +240,14 @@ Init
 RTC_init
 ;RTC SET-UP stuFFs
     call 	   i2c_common_setup
-    call	   set_rtc_time
+    ;rtc_resetAll
+    ;call	   set_rtc_time
     return
 
 ;Enables RB1 pin, Sets RB1 to high and TMR0 to low priority
 ISR_init
     bsf         RCON,IPEN
 	bsf         INTCON,GIEH
-    bcf         INTCON,GIEL
 
     bcf         INTCON3,INT1IF
     bsf         INTCON3,INT1IE
@@ -234,9 +258,12 @@ ISR_init
     bcf         INTCON2,TMR0IP
 
 ;Sets Timer0 to 16bit and configs Timer0, prescales 1:128 for a period of 1s at 8MHz
-;Switched to 1:64 for step for every half second
+;Switched to 1:8
     movlw       b'00000010'
     movwf       T0CON
+    bsf         INTCON,GIEL
+    bsf         T0CON,TMR0ON
+    
 	return
 
 ;; INTERRUPT SERVICES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -272,7 +299,9 @@ Check4
 
 ISR_Timer0
     bcf         INTCON,TMR0IF
+    btfsc       Run_state,1
     call        Step
+    call        Time
     return
 
 ;; SUBROUTINES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -286,6 +315,15 @@ CheckMachineState
 
 ;Start Routine
 Start
+    ;Initialize Timer
+    movlw       b'10010100'
+    movwf       TIMEL
+    movlw       b'00000011'
+    movwf       TIMEH
+    rtc_read	0x00
+    movf        0x75,w
+    movwf       StartTime
+
     call        Clear_LCD
     call        Line1
     Display     StartMsg
@@ -324,6 +362,21 @@ Start
     call        RanDelay
 
     call        MotorBackward
+
+    rtc_read	0x00
+    movf        0x75,w
+    movwf       StopTime
+
+    BCDToBin    StopTime
+    movwf       StopTime
+    BCDToBin    StartTime
+    subwf       StopTime,w
+    btfss       STATUS,C
+    addlw       b'00111100'
+    btfsc       TimeOV,0
+    addlw       b'00111100'
+    movwf       StopTime
+    BinToBCD    StopTime,Zero
     return
 
 ;Dispay Logs
@@ -340,6 +393,8 @@ Logs
 Motor
     clrf        Machine_state
     bsf         Machine_state, 3
+    clrf        Run_state
+    bsf         Run_state,1
     call        Clear_LCD
     call        Line1
     Display     MotorMsg
@@ -349,8 +404,6 @@ Motor
     bcf         Motor_Step,7
     movlw       b'11111111'
     movwf       Step_Counter
-    bsf         INTCON,GIEL
-    bsf         T0CON,TMR0ON
     return
 
 ;Motor_Step: 0001-Step1, 0010-Step2, 0100-Step3, 1000-Step4
@@ -420,41 +473,42 @@ Step_Done
 MenuRet
     clrf        Machine_state
     bsf         Machine_state, 0
+    clrf        Run_state
+    bsf         Run_state,0
     call        Stop_Motor
     call        Clear_LCD
     call        Line1
-    Display     Line1Start
-    call        Line2
-    Display     Line2Start
     call        show_RTC
+    call        Line2
+    Display     Line1Start
     return
 
 MotorForward
+    clrf        Run_state
+    bsf         Run_state,1
     movlw       d'24'               ;Step_counter 24 = 36 degrees
     movwf       Step_Counter
     bcf         Motor_Step,7        ;Set forward
     bcf         Motor_Step,6
-    bsf         INTCON,GIEL
-    bsf         T0CON,TMR0ON
     goto        WaitMotor
 
 MotorBackward
+    clrf        Run_state
+    bsf         Run_state,1
     movlw       d'216'               ;Step_counter 24 = 36 degrees
     movwf       Step_Counter
     bsf         Motor_Step,7        ;Set backward
     bcf         Motor_Step,6
-    bsf         INTCON,GIEL
-    bsf         T0CON,TMR0ON
     goto        WaitMotor
 
 WaitMotor
     btfss       Motor_Step,6        ;Wait for Motor
     goto        WaitMotor
+    clrf        Run_state
+    bsf         Run_state,5
     return
 
 Stop_Motor
-    bcf         INTCON,GIEL
-    bcf         T0CON,TMR0ON
     clrf        LATC
     bsf         Motor_Step,6
     return
@@ -497,88 +551,105 @@ DoneOp
     call        Clear_LCD
     call        Line1
     Display     Done
+    call        Line2
+    Display     DoneTime
+    movf        BCDL,w
+    andlw       0x0F
+    movwf       BCDH
+    BCD_Display BCDH
+    swapf       BCDL,w
+    andlw       0x0F
+    movwf       BCDH
+    BCD_Display BCDH
     clrf        Machine_state
+    bsf         Machine_state,0
     goto        Stop
+
+Time
+    decfsz      TIMEL,f
+    return
+    decfsz      TIMEH,f
+    return
+    
+    movlw       b'10010100'
+    movwf       TIMEL
+    movlw       b'00000011'
+    movwf       TIMEH
+
+    call        Line1
+    btfsc       Machine_state,0
+    call        show_RTC
+
+    btfss       Machine_state,1
+    return
+    bsf         TimeOV,0
+    return
 
 
 ;;From PML4ALL Writes RTC DATA to LCD
 show_RTC
-        call Clear_LCD
+    ;Get hour
+    rtc_read	0x02		;Read Address 0x02 from DS1307---hour
+	movf        0x77,w
+	call        WR_DATA
+	movf        0x78,w
+	call        WR_DATA
+	movlw       ":"
+	call        WR_DATA
 
-		;Get year
-		movlw	"2"				;First line shows 20**/**/**
-		call	WR_DATA
-		movlw	"0"
-		call	WR_DATA
-		rtc_read	0x06		;Read Address 0x06 from DS1307---year
-		movf	0x77,w
-		call	WR_DATA
-		movf	0x78,w
-		call	WR_DATA
+    ;Get minute
+	rtc_read	0x01		;Read Address 0x01 from DS1307---min
+	movf        0x77,w
+	call        WR_DATA
+	movf        0x78,w
+	call        WR_DATA
+	movlw		" "
+	call        WR_DATA
 
-		movlw	"/"
-		call	WR_DATA
+    ;Get month
+	rtc_read	0x05		;Read Address 0x05 from DS1307---month
+	movf        0x77,w
+	call        WR_DATA
+	movf        0x78,w
+	call        WR_DATA
+	movlw       "/"
+	call        WR_DATA
+    
+    ;Get day
+	rtc_read	0x04		;Read Address 0x04 from DS1307---day
+	movf	0x77,w
+	call	WR_DATA
+	movf	0x78,w
+	call	WR_DATA
+    movlw	"/"
+	call	WR_DATA
 
-		;Get month
-		rtc_read	0x05		;Read Address 0x05 from DS1307---month
-		movf	0x77,w
-		call	WR_DATA
-		movf	0x78,w
-		call	WR_DATA
+	;Get year
+	movlw	"2"				;First line shows 20**/**/**
+	call	WR_DATA
+	movlw	"0"
+	call	WR_DATA
+	rtc_read	0x06		;Read Address 0x06 from DS1307---year
+	movf	0x77,w
+	call	WR_DATA
+	movf	0x78,w
+	call	WR_DATA
 
-		movlw	"/"
-		call	WR_DATA
-
-		;Get day
-		rtc_read	0x04		;Read Address 0x04 from DS1307---day
-		movf	0x77,w
-		call	WR_DATA
-		movf	0x78,w
-		call	WR_DATA
-
-		movlw	B'11000000'		;Next line displays (hour):(min):(sec) **:**:**
-		call	WR_INS
-
-		;Get hour
-		rtc_read	0x02		;Read Address 0x02 from DS1307---hour
-		movf	0x77,w
-		call	WR_DATA
-		movf	0x78,w
-		call	WR_DATA
-		movlw			":"
-		call	WR_DATA
-
-		;Get minute
-		rtc_read	0x01		;Read Address 0x01 from DS1307---min
-		movf	0x77,w
-		call	WR_DATA
-		movf	0x78,w
-		call	WR_DATA
-		movlw			":"
-		call	WR_DATA
-
-		;Get seconds
-		rtc_read	0x00		;Read Address 0x00 from DS1307---seconds
-		movf	0x77,w
-		call	WR_DATA
-		movf	0x78,w
-		call	WR_DATA
-
-		return
+	return
 
 set_rtc_time
 
-		;rtc_resetAll	;reset rtc
+		rtc_resetAll	;reset rtc
 
 		rtc_set	0x00,	B'10000000'
 
 		;set time
 		rtc_set	0x06,	B'00010100'		; Year
 		rtc_set	0x05,	B'00000010'		; Month
-		rtc_set	0x04,	B'00100010'		; Date
-		rtc_set	0x03,	B'00000110'		; Day
-		rtc_set	0x02,	B'00010010'		; Hours
-		rtc_set	0x01,	B'00001001'		; Minutes
+		rtc_set	0x04,	B'00100011'		; Date
+		rtc_set	0x03,	B'00000111'		; Day
+		rtc_set	0x02,	B'00100000'		; Hours
+		rtc_set	0x01,	B'00101000'		; Minutes
 		rtc_set	0x00,	B'00000000'		; Seconds
 		return
 end
