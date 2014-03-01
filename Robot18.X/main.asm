@@ -33,10 +33,13 @@ cblock 0x0
     Flashlight_counter
     Step_Counter
     Zero
+    Binl
+    Binh
     BCDL
     BCDH
     BCDU
     COUNT
+    BCDDISPLAY
     TIMEH
     TIMEL
     TempDelay1
@@ -154,6 +157,7 @@ BinToBCD macro BINL, BINH
     clrf        BCDU
     movlw       d'16'
     movwf       COUNT
+    bcf         STATUS,C                ;ADDED
 ConvertBit
     rlcf        BINL,F      ;C
     rlcf        BINH,F
@@ -194,15 +198,15 @@ Mainline
 Stop
     btfss       Machine_state,1
     goto        Stop                ;END OF CODE
-    call        Start
+    goto        Start
     goto        DoneOp
 
 
 ;; INITIALIZATION ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Init
     movlw       B'01110000'
-    movwf		OSCCON              ;Set internal oscillator to 8MHz
-    bsf         OSCTUNE, 6          ;Enables scaler
+    movwf		OSCCON              ;Set internal oscillator to 32MHz = 8MHz per
+    bsf         OSCTUNE, 6          ;clock cycle. Enables scaler
 
     movlw       b'11111111'
     movwf       TRISB               ;set PORTB to input - Keypad
@@ -217,9 +221,9 @@ Init
     clrf        LATD
     clrf        LATA
 
-    movlw       b'00001101'
+    movlw       b'00001110'
     movwf       ADCON1              ;Sets AN0:1 (RA0:1) to analog, Uses Vss and Vdd
-    movlw       b'00001101'         ;Sets 2Tad and 16Tosc
+    movlw       b'10100110'         ;Sets 2Tad and 16Tosc
     movwf       ADCON2
 
     clrf        Machine_state
@@ -230,7 +234,7 @@ Init
     ;Initialize Timer for RTC display
     movlw       b'10010100'
     movwf       TIMEL
-    movlw       b'00000011'
+    movlw       b'00000100'
     movwf       TIMEH
 
     movlw       b'00000000'
@@ -257,8 +261,8 @@ ISR_init
     bsf         INTCON,TMR0IE
     bcf         INTCON2,TMR0IP
 
-;Sets Timer0 to 16bit and configs Timer0, prescales 1:128 for a period of 1s at 8MHz
-;Switched to 1:8
+;Sets Timer0 to 16bit and configs Timer0, prescales 1:8. At 16 bit, the timer
+;overflows every 122Hz. At 1:8, it overflows every 15.261Hz
     movlw       b'00000010'
     movwf       T0CON
     bsf         INTCON,GIEL
@@ -304,24 +308,18 @@ ISR_Timer0
     call        Time
     return
 
-;; SUBROUTINES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;check MachineState to see if go to start or ret
-CheckMachineState
-    btfss       Machine_state, 0
-    goto        MenuRet
-    clrf        Machine_state
-    bsf         Machine_state, 1
-    return
-
+;; START ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;Start Routine
 Start
     ;Initialize Timer
     movlw       b'10010100'
     movwf       TIMEL
-    movlw       b'00000011'
+    movlw       b'00000100'
     movwf       TIMEH
+    bcf         TimeOV,0
     rtc_read	0x00
     movf        0x75,w
+    andlw       b'01111111'
     movwf       StartTime
 
     call        Clear_LCD
@@ -330,53 +328,75 @@ Start
     call        Line2
     Display     RetMsg
 
-    bsf         Motor_Step,0
+    movlw       b'00001001'
+    movwf       Turn_counter
 
+    call        Line1
+Forward
+    dcfsnz      Turn_counter
+    goto        Back
     call        MotorForward
-    ;;;;;; Get Data ;;;;;;
-    ;;;;;; Store Data ;;;;;
+    ;;;;;;;;;;  GET DATA  ;;;;;;;;;;;;
     call        RanDelay
+    ;movlw       '1'
+    ;call        WR_DATA
+    goto        Forward
 
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
-    call        MotorForward
-    call        RanDelay
-
+Back
+    movlw       b'00001011'
+    incf        Turn_counter
+    cpfslt      Turn_counter
+    goto        MDone
     call        MotorBackward
+    ;movlw       '2'
+    ;call        WR_DATA
+    goto        Back
 
+MDone
     rtc_read	0x00
     movf        0x75,w
+    andlw       b'01111111'
     movwf       StopTime
 
     BCDToBin    StopTime
     movwf       StopTime
     BCDToBin    StartTime
     subwf       StopTime,w
-    btfss       STATUS,C
+    btfsc       STATUS,N
+    addlw       b'00111100'
+    btfsc       STATUS,Z
     addlw       b'00111100'
     btfsc       TimeOV,0
     addlw       b'00111100'
     movwf       StopTime
     BinToBCD    StopTime,Zero
+    goto        DoneOp
+
+DoneOp
+    call        Clear_LCD
+    call        Line1
+    Display     Done
+    call        Line2
+    Display     DoneTime
+    swapf       BCDL,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    movf        BCDL,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    clrf        Machine_state
+    bsf         Machine_state,0
+    goto        Stop
+
+;; SUBROUTINES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;check MachineState to see if go to start or ret
+CheckMachineState
+    btfss       Machine_state, 0
+    goto        MenuRet
+    clrf        Machine_state
+    bsf         Machine_state, 1
     return
 
 ;Dispay Logs
@@ -495,7 +515,7 @@ MotorForward
 MotorBackward
     clrf        Run_state
     bsf         Run_state,1
-    movlw       d'216'               ;Step_counter 24 = 36 degrees
+    movlw       d'24'               ;Step_counter 24 = 36 degrees
     movwf       Step_Counter
     bsf         Motor_Step,7        ;Set backward
     bcf         Motor_Step,6
@@ -538,32 +558,28 @@ A2D
     call        Clear_LCD
     movlw       b'00000001'
     movwf       ADCON0
+    bsf         ADCON0,1
     btfsc       ADCON0,1
     goto        $-2
 ;Writes to LCD
-    movf        ADRESH,w
-    call        WR_DATA
-    movf        ADRESL,w
-    call        WR_DATA
-    return
-
-DoneOp
-    call        Clear_LCD
-    call        Line1
-    Display     Done
-    call        Line2
-    Display     DoneTime
-    movf        BCDL,w
+    BinToBCD    ADRESL,ADRESH
+    swapf       BCDH,w
     andlw       0x0F
-    movwf       BCDH
-    BCD_Display BCDH
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    movf        BCDH,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
     swapf       BCDL,w
     andlw       0x0F
-    movwf       BCDH
-    BCD_Display BCDH
-    clrf        Machine_state
-    bsf         Machine_state,0
-    goto        Stop
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    movf        BCDL,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    return
 
 Time
     decfsz      TIMEL,f
@@ -573,15 +589,14 @@ Time
     
     movlw       b'10010100'
     movwf       TIMEL
-    movlw       b'00000011'
+    movlw       b'00000100'
     movwf       TIMEH
 
     call        Line1
     btfsc       Machine_state,0
     call        show_RTC
 
-    btfss       Machine_state,1
-    return
+    btfsc       Machine_state,1
     bsf         TimeOV,0
     return
 
