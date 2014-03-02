@@ -48,6 +48,9 @@ cblock 0x0
     StartTime
     StopTime
     TimeOV
+    DATA_EE_ADDRH
+    DATA_EE_ADDR
+    DATA_EE_DATA
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -232,6 +235,7 @@ Init
     bsf         Run_state,0         ;Set run state to not running
 
     ;Initialize Timer for RTC display
+    ;Ticks once every 60.030976 seconds.
     movlw       b'10010100'
     movwf       TIMEL
     movlw       b'00000100'
@@ -667,4 +671,57 @@ set_rtc_time
 		rtc_set	0x01,	B'00101000'		; Minutes
 		rtc_set	0x00,	B'00000000'		; Seconds
 		return
+;;TAKEN FROM DATA SHEET
+EEPROM_Read
+    MOVLW DATA_EE_ADDRH ;
+    MOVWF EEADRH ; Upper bits of Data Memory Address to read
+    MOVLW DATA_EE_ADDR ;
+    MOVWF EEADR ; Lower bits of Data Memory Address to read
+    BCF EECON1, EEPGD ; Point to DATA memory
+    BCF EECON1, CFGS ; Access EEPROM
+    BSF EECON1, RD ; EEPROM Read
+    MOVF EEDATA, W ; W = EEDATA
+return
+
+EEPROM_Write
+    MOVLW DATA_EE_ADDRH ;
+    MOVWF EEADRH ; Upper bits of Data Memory Address to write
+    MOVLW DATA_EE_ADDR ;
+    MOVWF EEADR ; Lower bits of Data Memory Address to write
+    MOVLW DATA_EE_DATA ;
+    MOVWF EEDATA ; Data Memory Value to write
+    BCF EECON1, EEPGD ; Point to DATA memory
+    BCF EECON1, CFGS ; Access EEPROM
+    BSF EECON1, WREN ; Enable writes
+    MOVLW 55h ;
+    MOVWF EECON2 ; Write 55h
+    MOVLW 0AAh ;
+    MOVWF EECON2 ; Write 0AAh
+    BSF EECON1, WR ; Set WR bit to begin write
+    BTFSC EECON1, WR ; Wait for write to complete
+    BRA $-2
+    BCF EECON1, WREN ; Disable writes on write complete (EEIF set)
+return
+
+EEPROM_Refresh
+    CLRF EEADR ; Start at address 0
+    CLRF EEADRH ;
+    BCF EECON1, CFGS ; Set for memory
+    BCF EECON1, EEPGD ; Set for Data EEPROM
+    BSF EECON1, WREN ; Enable writes
+EEPROM_Refresh_Loop ; Loop to refresh array
+    BSF EECON1, RD ; Read current address
+    MOVLW 55h ;
+    MOVWF EECON2 ; Write 55h
+    MOVLW 0AAh ;
+    MOVWF EECON2 ; Write 0AAh
+    BSF EECON1, WR ; Set WR bit to begin write
+    BTFSC EECON1, WR ; Wait for write to complete
+    BRA $-2
+    INCFSZ EEADR, F ; Increment address
+    BRA EEPROM_Refresh_Loop ; Not zero, do it again
+    INCFSZ EEADRH, F ; Increment the high address
+    BRA EEPROM_Refresh_Loop ; Not zero, do it again
+    BCF EECON1, WREN ; Disable writes
+return
 end
