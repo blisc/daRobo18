@@ -93,6 +93,7 @@ Done
     db      "Done!!!", 0
 DoneTime
     db      "Time: ",0
+
 ;; MACROS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Display macro label
     local       Again
@@ -177,6 +178,7 @@ ConvertBit
     bra         ConvertBit
 endm
 
+;Code taken from online
 BCDToBin macro  bcd
     swapf   bcd, W
     andlw   0x0F            ; W= tens
@@ -204,7 +206,6 @@ Stop
     goto        Start
     goto        DoneOp
 
-
 ;; INITIALIZATION ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Init
     movlw       B'01110000'
@@ -217,14 +218,14 @@ Init
     bsf         TRISC,3
     bsf         TRISC,4             ;RC3:4 are inputs for RTC
 	clrf		TRISD               ;set PORTD to LCD
-    movlw       b'00000011'
+    movlw       b'00001111'
     movwf       TRISA               ;RA0:1 input for sensors, rest output
 
     clrf        LATC
     clrf        LATD
     clrf        LATA
 
-    movlw       b'00001110'
+    movlw       b'00111110'
     movwf       ADCON1              ;Sets AN0:1 (RA0:1) to analog, Uses Vss and Vdd
     movlw       b'10100110'         ;Sets 2Tad and 16Tosc
     movwf       ADCON2
