@@ -27,10 +27,9 @@ cblock 0x0
 	temp_w
 	temp_status
     Machine_state
-    Run_state
     Motor_Step
     Turn_counter
-    Flashlight_counter
+    FlashlightCounter
     Step_Counter
     Zero
     Binl
@@ -42,15 +41,28 @@ cblock 0x0
     BCDDISPLAY
     TIMEH
     TIMEL
-    TempDelay1
-    TempDelay2
-    TempDelay3
     StartTime
     StopTime
-    TimeOV
+    RunStateBits                ;; bit 0: minutre overflow, bit 1: presense of flashlight
     DATA_EE_ADDRH
     DATA_EE_ADDR
     DATA_EE_DATA
+    Key_Pressed
+    Resistor1
+    Resistor2
+    Resistor3
+    Resistor4
+    Resistor5
+    Resistor6
+    Flashlight1
+    Flashlight2
+    Flashlight3
+    Flashlight4
+    Flashlight5
+    Flashlight6
+    Flashlight7
+    Flashlight8
+    Flashlight9
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -194,17 +206,13 @@ Mainline
     call        LCD_Init
     call        RTC_init
     call        ISR_init
-
-    call        show_RTC
     banksel     Line1Start
-    call        Line2
-    Display     Line1Start
+    call        DispMainMenu
 
-Stop
+MainMenu
     btfss       Machine_state,1
-    goto        Stop                ;END OF CODE
+    goto        MainMenu
     goto        Start
-    goto        DoneOp
 
 ;; INITIALIZATION ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Init
@@ -214,32 +222,28 @@ Init
 
     movlw       b'11111111'
     movwf       TRISB               ;set PORTB to input - Keypad
-	clrf		TRISC               ;Set PORTC 0:2 and 5:7 as output (0:2 and 5 for motor)
-    bsf         TRISC,3
-    bsf         TRISC,4             ;RC3:4 are inputs for RTC
-	clrf		TRISD               ;set PORTD to LCD
-    movlw       b'00001111'
+    movlw       b'00011000'         ;Set PORTC 0:2 and 5:7 as output (0:2 and
+    movwf       TRISC               ;5 for motor) RC3:4 are inputs for RTC
+	clrf		TRISD               ;set PORTD to output for LCD
+    movlw       b'00111111'
     movwf       TRISA               ;RA0:1 input for sensors, rest output
+    movlw       b'00000111'
+    movwf       TRISE
 
     clrf        LATC
     clrf        LATD
     clrf        LATA
 
-    movlw       b'00111110'
-    movwf       ADCON1              ;Sets AN0:1 (RA0:1) to analog, Uses Vss and Vdd
-    movlw       b'10100110'         ;Sets 2Tad and 16Tosc
+    movlw       b'00110111'
+    movwf       ADCON1              ;Sets AN0:12 to analog, Uses Vref
+    movlw       b'00100110'         ;Sets 2Tad and 16Tosc and left justified
     movwf       ADCON2
 
-    clrf        Machine_state
-    bsf         Machine_state, 0    ;Set machine state to idle
-    clrf        Run_state
-    bsf         Run_state,0         ;Set run state to not running
-
     ;Initialize Timer for RTC display
-    ;Ticks once every 60.030976 seconds.
-    movlw       b'10010100'
+    ;Ticks once every 60.014592 seconds.
+    movlw       b'01001111'
     movwf       TIMEL
-    movlw       b'00000100'
+    movlw       b'00001110'
     movwf       TIMEH
 
     movlw       b'00000000'
@@ -267,8 +271,8 @@ ISR_init
     bcf         INTCON2,TMR0IP
 
 ;Sets Timer0 to 16bit and configs Timer0, prescales 1:8. At 16 bit, the timer
-;overflows every 122Hz. At 1:8, it overflows every 15.261Hz
-    movlw       b'00000010'
+;overflows every 122Hz. At 1:2, it overflows every 61.035Hz
+    movlw       b'00000000'
     movwf       T0CON
     bsf         INTCON,GIEL
     bsf         T0CON,TMR0ON
@@ -283,32 +287,21 @@ ISR_Key
     bcf         INTCON3,INT1IF
 	swapf       PORTB,W             ;Puts PORTB7:4 into W3:0
     andlw       0x0F                ;W: 0000XXXX
-    movwf       H'30'
-    incf        H'30',f
-    decfsz      H'30',f             ;decrement working reg, skip next line if 0
+    movwf       Key_Pressed
+    incf        Key_Pressed,f
+    decfsz      Key_Pressed,f             ;decrement working reg, skip next line if 0
     goto        Check2
-    goto        CheckMachineState
+    goto        SetStart
 ;Checks if 2 is pressed
 Check2
     ;Checks Machine State
-    btfss       Machine_state, 0
+    btfss       Machine_state, 3
     return
-    decfsz      H'30', f
-    goto        Check3              ;If not 2, wait until button released
-    goto        Logs                ;If 2, display Logs
-;Checks if 3 is pressed
-Check3
-    decfsz      H'30', f
-    goto        Check4
-    goto        Motor
-Check4
-    decfsz      H'30', f
-    return
-    goto        A2D
+    goto        DispMainMenu
 
 ISR_Timer0
     bcf         INTCON,TMR0IF
-    btfsc       Run_state,1
+    btfsc       Machine_state,2
     call        Step
     call        Time
     return
@@ -317,47 +310,54 @@ ISR_Timer0
 ;Start Routine
 Start
     ;Initialize Timer
-    movlw       b'10010100'
+    movlw       b'01001111'
     movwf       TIMEL
-    movlw       b'00000100'
+    movlw       b'00001111'
     movwf       TIMEH
-    bcf         TimeOV,0
+    bcf         RunStateBits,0
     rtc_read	0x00
     movf        0x75,w
     andlw       b'01111111'
     movwf       StartTime
+    movlw       b'00000000'
+    movwf       FlashlightCounter
 
     call        Clear_LCD
     call        Line1
     Display     StartMsg
-    call        Line2
-    Display     RetMsg
 
-    movlw       b'00001001'
+    movlw       b'00000000'
     movwf       Turn_counter
+    clrf        Turn_counter
 
-    call        Line1
 Forward
-    dcfsnz      Turn_counter
+    btfsc       Machine_state,0
+    goto        Back
+    movlw       b'00001010'
+    incf        Turn_counter
+    cpfslt      Turn_counter
     goto        Back
     call        MotorForward
-    ;;;;;;;;;;  GET DATA  ;;;;;;;;;;;;
-    call        RanDelay
-    ;movlw       '1'
-    ;call        WR_DATA
+    call        GetIRData           ;Checks for presense of flashlight
+    btfss       RunStateBits,1
+    goto        Forward
+    call        GetPRData
+    call        GetStatus
     goto        Forward
 
 Back
-    movlw       b'00001011'
-    incf        Turn_counter
-    cpfslt      Turn_counter
+    dcfsnz      Turn_counter
     goto        MDone
     call        MotorBackward
-    ;movlw       '2'
-    ;call        WR_DATA
     goto        Back
 
 MDone
+    movf        FlashlightCounter,w
+    movwf       DATA_EE_DATA
+    movlw       63
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
     rtc_read	0x00
     movf        0x75,w
     andlw       b'01111111'
@@ -371,13 +371,14 @@ MDone
     addlw       b'00111100'
     btfsc       STATUS,Z
     addlw       b'00111100'
-    btfsc       TimeOV,0
+    btfsc       RunStateBits,0
     addlw       b'00111100'
     movwf       StopTime
     BinToBCD    StopTime,Zero
-    goto        DoneOp
 
-DoneOp
+;; Operation is done, need to display results
+    clrf        Machine_state
+    bsf         Machine_state,3
     call        Clear_LCD
     call        Line1
     Display     Done
@@ -391,46 +392,30 @@ DoneOp
     andlw       0x0F
     movwf       BCDDISPLAY
     BCD_Display BCDDISPLAY
-    clrf        Machine_state
-    bsf         Machine_state,0
-    goto        Stop
 
-;; SUBROUTINES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+    goto        MainMenu
+
+;; Machine State Routines ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;check MachineState to see if go to start or ret
-CheckMachineState
-    btfss       Machine_state, 0
-    goto        MenuRet
+SetStart
+    btfss       Machine_state,0
+    return
     clrf        Machine_state
     bsf         Machine_state, 1
     return
 
 ;Dispay Logs
-Logs
-    clrf        Machine_state
-    bsf         Machine_state, 2
-    call        Clear_LCD
-    call        Line1
-    Display     LogMsg
-    call        Line2
-    Display     RetMsg
-    return
+;Logs
+;    clrf        Machine_state
+;    bsf         Machine_state, 2
+;    call        Clear_LCD
+;    call        Line1
+;    Display     LogMsg
+;    call        Line2
+;    Display     RetMsg
+;    return
 
-Motor
-    clrf        Machine_state
-    bsf         Machine_state, 3
-    clrf        Run_state
-    bsf         Run_state,1
-    call        Clear_LCD
-    call        Line1
-    Display     MotorMsg
-    call        Line2
-    Display     RetMsg
-    bsf         Motor_Step,0
-    bcf         Motor_Step,7
-    movlw       b'11111111'
-    movwf       Step_Counter
-    return
-
+;; Motor Routine ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;Motor_Step: 0001-Step1, 0010-Step2, 0100-Step3, 1000-Step4
 Step
     dcfsnz      Step_Counter
@@ -446,7 +431,7 @@ Step
 Step1
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00100001'
+    iorlw       b'00000001'
     movwf       LATC               ;Set moto to first squence
     bcf         Motor_Step,0
     btfsc       Motor_Step,7
@@ -455,7 +440,7 @@ Step1
 Step2
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00000101'
+    iorlw       b'00000100'
     movwf       LATC               ;Set moto to second squence
     bcf         Motor_Step,1
     btfsc       Motor_Step,7
@@ -464,7 +449,7 @@ Step2
 Step3
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00000110'
+    iorlw       b'00000010'
     movwf       LATC               ;Set moto to thrid squence
     bcf         Motor_Step,2
     btfsc       Motor_Step,7
@@ -473,7 +458,7 @@ Step3
 Step4
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00100010'
+    iorlw       b'00100000'
     movwf       LATC               ;Set moto to fourth squence
     bcf         Motor_Step,3
     btfsc       Motor_Step,7
@@ -494,33 +479,17 @@ SetStep4
 Step_Done
     return
 
-;Return to main menu if 1 is pressed
-MenuRet
-    clrf        Machine_state
-    bsf         Machine_state, 0
-    clrf        Run_state
-    bsf         Run_state,0
-    call        Stop_Motor
-    call        Clear_LCD
-    call        Line1
-    call        show_RTC
-    call        Line2
-    Display     Line1Start
-    return
-
 MotorForward
-    clrf        Run_state
-    bsf         Run_state,1
-    movlw       d'24'               ;Step_counter 24 = 36 degrees
+    bsf         Machine_state,2
+    movlw       d'34'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bcf         Motor_Step,7        ;Set forward
     bcf         Motor_Step,6
     goto        WaitMotor
 
 MotorBackward
-    clrf        Run_state
-    bsf         Run_state,1
-    movlw       d'24'               ;Step_counter 24 = 36 degrees
+    bsf         Machine_state,2
+    movlw       d'34'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bsf         Motor_Step,7        ;Set backward
     bcf         Motor_Step,6
@@ -529,8 +498,7 @@ MotorBackward
 WaitMotor
     btfss       Motor_Step,6        ;Wait for Motor
     goto        WaitMotor
-    clrf        Run_state
-    bsf         Run_state,5
+    bcf         Machine_state,2
     return
 
 Stop_Motor
@@ -538,52 +506,127 @@ Stop_Motor
     bsf         Motor_Step,6
     return
 
-RanDelay
+;; General Subroutines ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+GetIRData
+    bcf         RunStateBits,1
+    movlw       b'00110001'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw       0x1
+    mullw       0x7
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
     movlw       b'01111111'
-    movwf       TempDelay3
-    movlw       b'11111111'
-RanDelayLoop3
-    movwf       TempDelay2
-RanDelayLoop2
-    movwf       TempDelay1
-RanDelayLoop1
-    decfsz      TempDelay1
-    goto        RanDelayLoop1
-    decfsz      TempDelay2
-    goto        RanDelayLoop2
-    decfsz      TempDelay3
-    goto        RanDelayLoop3
+    cpfsgt      ADRESH
+    bsf         RunStateBits,1
     return
 
-
-;A2D module
-A2D
-    clrf        Machine_state
-    bsf         Machine_state, 4
-    call        Clear_LCD
+GetPRData
+    incf        FlashlightCounter
     movlw       b'00000001'
     movwf       ADCON0
     bsf         ADCON0,1
     btfsc       ADCON0,1
     goto        $-2
-;Writes to LCD
-    BinToBCD    ADRESL,ADRESH
-    swapf       BCDH,w
-    andlw       0x0F
-    movwf       BCDDISPLAY
-    BCD_Display BCDDISPLAY
-    movf        BCDH,w
-    andlw       0x0F
-    movwf       BCDDISPLAY
-    BCD_Display BCDDISPLAY
-    swapf       BCDL,w
-    andlw       0x0F
-    movwf       BCDDISPLAY
-    BCD_Display BCDDISPLAY
-    movf        BCDL,w
-    andlw       0x0F
-    movwf       BCDDISPLAY
-    BCD_Display BCDDISPLAY
+    movf        ADRESH,w
+    movlw       Resistor1
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw       0x1
+    mullw       0x7
+    addlw       0x1
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
+    movlw       b'00000101'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movlw       Resistor2
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw     1
+    mullw       7
+    addlw       2
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
+    movlw       b'00010001'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movlw       Resistor3
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw     1
+    mullw       7
+    addlw       3
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
+    movlw       b'00010101'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movlw       Resistor4
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw     1
+    mullw       7
+    addlw       4
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
+    movlw       b'00011001'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movlw       Resistor5
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw     1
+    mullw       7
+    addlw       5
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
+    movlw       b'00011101'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movlw       Resistor6
+    movf        ADRESH,w
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    sublw     1
+    mullw       7
+    addlw       6
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+    return
+
+GetStatus
+    
     return
 
 Time
@@ -592,9 +635,9 @@ Time
     decfsz      TIMEH,f
     return
     
-    movlw       b'10010100'
+    movlw       b'01001111'
     movwf       TIMEL
-    movlw       b'00000100'
+    movlw       b'00001110'
     movwf       TIMEH
 
     call        Line1
@@ -602,9 +645,17 @@ Time
     call        show_RTC
 
     btfsc       Machine_state,1
-    bsf         TimeOV,0
+    bsf         RunStateBits,0
     return
 
+DispMainMenu
+    clrf        Machine_state
+    bsf         Machine_state,0
+    call        Line1
+    call        show_RTC
+    call        Line2
+    Display     Line1Start
+    return
 
 ;;From PML4ALL Writes RTC DATA to LCD
 show_RTC
@@ -674,9 +725,9 @@ set_rtc_time
 		return
 ;;TAKEN FROM DATA SHEET
 EEPROM_Read
-    MOVLW DATA_EE_ADDRH ;
+    MOVf DATA_EE_ADDRH,w ;
     MOVWF EEADRH ; Upper bits of Data Memory Address to read
-    MOVLW DATA_EE_ADDR ;
+    MOVf DATA_EE_ADDR,w ;
     MOVWF EEADR ; Lower bits of Data Memory Address to read
     BCF EECON1, EEPGD ; Point to DATA memory
     BCF EECON1, CFGS ; Access EEPROM
@@ -685,11 +736,11 @@ EEPROM_Read
 return
 
 EEPROM_Write
-    MOVLW DATA_EE_ADDRH ;
+    MOVf DATA_EE_ADDRH,w ;
     MOVWF EEADRH ; Upper bits of Data Memory Address to write
-    MOVLW DATA_EE_ADDR ;
+    MOVf DATA_EE_ADDR,w ;
     MOVWF EEADR ; Lower bits of Data Memory Address to write
-    MOVLW DATA_EE_DATA ;
+    MOVf DATA_EE_DATA,w ;
     MOVWF EEDATA ; Data Memory Value to write
     BCF EECON1, EEPGD ; Point to DATA memory
     BCF EECON1, CFGS ; Access EEPROM
