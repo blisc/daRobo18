@@ -43,11 +43,12 @@ cblock 0x0
     TIMEL
     StartTime
     StopTime
-    RunStateBits                ;; bit 0: minutre overflow, bit 1: presense of flashlight
+    RunStateBits                ;; bit 0: minutre overflow, bit 1: presense of flashlight, bit 2: photoresistor wait
     DATA_EE_ADDRH
     DATA_EE_ADDR
     DATA_EE_DATA
     Key_Pressed
+    ResistorDelay
     Resistor1
     Resistor2
     Resistor3
@@ -234,7 +235,7 @@ Init
     clrf        LATD
     clrf        LATA
 
-    movlw       b'00110111'
+    movlw       b'00010111'
     movwf       ADCON1              ;Sets AN0:12 to analog, Uses Vref
     movlw       b'00100110'         ;Sets 2Tad and 16Tosc and left justified
     movwf       ADCON2
@@ -248,6 +249,9 @@ Init
 
     movlw       b'00000000'
     movwf       Zero
+
+    clrf        DATA_EE_ADDRH
+    bsf         RunStateBits,2
     return
 
 RTC_init
@@ -303,6 +307,8 @@ ISR_Timer0
     bcf         INTCON,TMR0IF
     btfsc       Machine_state,2
     call        Step
+    btfss       RunStateBits,2
+    call        RDelayDec
     call        Time
     return
 
@@ -354,7 +360,7 @@ Back
 MDone
     movf        FlashlightCounter,w
     movwf       DATA_EE_DATA
-    movlw       63
+    movlw       d'63'
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
 
@@ -508,55 +514,62 @@ Stop_Motor
 
 ;; General Subroutines ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GetIRData
+    bcf         RunStateBits,2
+    movlw       b'00111100'
+    movwf       ResistorDelay
+RDelay
+    btfss       RunStateBits,2
+    goto        RDelay
     bcf         RunStateBits,1
-    movlw       b'00110001'
-    movwf       ADCON0
-    bsf         ADCON0,1
-    btfsc       ADCON0,1
-    goto        $-2
-    movf        ADRESH,w
-    movwf       DATA_EE_DATA
-    movf        Turn_counter,w
-    sublw       0x1
-    mullw       0x7
-    movwf       DATA_EE_ADDR
-    call        EEPROM_Write
-    movlw       b'01111111'
-    cpfsgt      ADRESH
-    bsf         RunStateBits,1
-    return
-
-GetPRData
-    incf        FlashlightCounter
     movlw       b'00000001'
     movwf       ADCON0
     bsf         ADCON0,1
     btfsc       ADCON0,1
     goto        $-2
     movf        ADRESH,w
-    movlw       Resistor1
-    movf        ADRESH,w
     movwf       DATA_EE_DATA
     movf        Turn_counter,w
-    sublw       0x1
-    mullw       0x7
-    addlw       0x1
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
+    movlw       b'00001010'
+    cpfsgt      ADRESH
+    bsf         RunStateBits,1
+    return
 
+GetPRData
+    incf        FlashlightCounter
     movlw       b'00000101'
     movwf       ADCON0
     bsf         ADCON0,1
     btfsc       ADCON0,1
     goto        $-2
     movf        ADRESH,w
-    movlw       Resistor2
-    movf        ADRESH,w
+    movwf       Resistor1
     movwf       DATA_EE_DATA
     movf        Turn_counter,w
-    sublw     1
-    mullw       7
-    addlw       2
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
+    addlw       d'1'
+    movwf       DATA_EE_ADDR
+    call        EEPROM_Write
+
+    movlw       b'00001001'
+    movwf       ADCON0
+    bsf         ADCON0,1
+    btfsc       ADCON0,1
+    goto        $-2
+    movf        ADRESH,w
+    movwf       Resistor2
+    movwf       DATA_EE_DATA
+    movf        Turn_counter,w
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
+    addlw       d'2'
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
 
@@ -566,13 +579,13 @@ GetPRData
     btfsc       ADCON0,1
     goto        $-2
     movf        ADRESH,w
-    movlw       Resistor3
-    movf        ADRESH,w
+    movwf       Resistor3
     movwf       DATA_EE_DATA
     movf        Turn_counter,w
-    sublw     1
-    mullw       7
-    addlw       3
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
+    addlw       d'3'
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
 
@@ -582,13 +595,13 @@ GetPRData
     btfsc       ADCON0,1
     goto        $-2
     movf        ADRESH,w
-    movlw       Resistor4
-    movf        ADRESH,w
+    movwf       Resistor4
     movwf       DATA_EE_DATA
     movf        Turn_counter,w
-    sublw     1
-    mullw       7
-    addlw       4
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
+    addlw       d'4'
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
 
@@ -598,29 +611,29 @@ GetPRData
     btfsc       ADCON0,1
     goto        $-2
     movf        ADRESH,w
-    movlw       Resistor5
-    movf        ADRESH,w
+    movwf       Resistor5
     movwf       DATA_EE_DATA
     movf        Turn_counter,w
-    sublw     1
-    mullw       7
-    addlw       5
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
+    addlw       d'5'
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
 
-    movlw       b'00011101'
+    movlw       b'000111101'
     movwf       ADCON0
     bsf         ADCON0,1
     btfsc       ADCON0,1
     goto        $-2
     movf        ADRESH,w
-    movlw       Resistor6
-    movf        ADRESH,w
+    movwf       Resistor6
     movwf       DATA_EE_DATA
     movf        Turn_counter,w
-    sublw     1
-    mullw       7
-    addlw       6
+    addlw       b'11111111'
+    mullw       d'7'
+    movf        PRODL,w
+    addlw       d'6'
     movwf       DATA_EE_ADDR
     call        EEPROM_Write
     return
@@ -629,6 +642,11 @@ GetStatus
     
     return
 
+RDelayDec
+    dcfsnz      ResistorDelay
+    bsf         RunStateBits,2
+    return
+    
 Time
     decfsz      TIMEL,f
     return
