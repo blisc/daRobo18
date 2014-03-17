@@ -30,14 +30,13 @@ cblock 0x0
     ;bit 0 - main menu
     ;bit 1 - machine is runing
     ;bit 2 - running motor
-    ;bit 3 - displaying logs at end of operation
+    ;bit 3 - displaying a single log
+    ;bit 4 - choosing log
     Motor_Step
     Turn_counter
     FlashlightCounter
     Step_Counter
     Zero
-    Binl
-    Binh
     BCDL
     BCDH
     BCDU
@@ -45,13 +44,15 @@ cblock 0x0
     BCDDISPLAY
     TIMEH
     TIMEL
-    StartTime
+    StartTime           ;0xF
     StopTime
     RunStateBits                
     ;bit 0: minutre overflow
     ;bit 1: presense of flashlight
     ;bit 2: photoresistor wait
     ;bit 3: error!!! in sensor logic
+    DataDisplay
+    ;0-14: what the log is displaying
     Key_Pressed
     ResistorDelay
     Resistor1
@@ -61,7 +62,7 @@ cblock 0x0
     Resistor5
     Resistor6
     NumHigh
-    NumMed
+    NumMed              ;0x1C
     ;00 - No LED, 01 - 1, 10 - 2, 11 - 3
     Flashlight1
     Flashlight2
@@ -98,23 +99,35 @@ endc
 
 ;; TABLES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Line1Start
-	db		"1: Start 2: Logs", 0
-Line2Start
-	db		"3: Motor", 0
+	db		"1:Start 2:Logs", 0
 StartMsg
-	db		"U Pressed Start", 0
-MotorMsg
-	db		"Run Dat Motor", 0
-LogMsg
-	db		"Here be the logs", 0
-RetMsg
-	db		"1: Return", 0
+	db		"In Operation", 0
 Number
     db      "0123456789", 0
-Done
-    db      "Done!!!", 0
-DoneTime
-    db      "Time: ",0
+DoneLine1
+    db      "Operation Done!", 0
+DoneLine2
+	db		"1:Main 2:Results", 0
+RetMsg
+    db      "1:Main 2:Next", 0
+DateMsg
+    db      "Tested: ", 0
+TimeMsg
+    db      "Test Time: ",0
+NumberMsg
+    db      "No. of Lights: ", 0
+FlashlightMsg
+    db      "Slot", 0
+EmptyMsg
+    db      "Empty", 0
+LED0
+    db      "3-LED Fail", 0
+LED1
+    db      "2-LED Fail", 0
+LED2
+    db      "1-LED Fail", 0
+LED3
+    db      "Pass", 0
 
 ;; MACROS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Display macro label
@@ -258,9 +271,6 @@ Init
 
     movlw       b'00000000'
     movwf       Zero
-
-    clrf        EEADRH
-    bsf         RunStateBits,2
     return
 
 RTC_init
@@ -298,20 +308,16 @@ ISR_Key
 	movf        STATUS,w
 	movwf       temp_status
     bcf         INTCON3,INT1IF
+    bsf         RunStateBits,3
 	swapf       PORTB,W             ;Puts PORTB7:4 into W3:0
     andlw       0x0F                ;W: 0000XXXX
     movwf       Key_Pressed
     incf        Key_Pressed,f
-    decfsz      Key_Pressed,f             ;decrement working reg, skip next line if 0
-    goto        Check2
-    goto        SetStart
-;Checks if 2 is pressed
-Check2
-    bsf         RunStateBits,3
-    ;Checks Machine State
-    btfss       Machine_state, 3
-    return
-    goto        DispMainMenu
+    dcfsnz      Key_Pressed,f             ;decrement working reg, skip next line if 0
+    goto        Pressed1
+    dcfsnz      Key_Pressed,f
+    goto        Pressed2
+    return 
 
 ISR_Timer0
     bcf         INTCON,TMR0IF
@@ -342,8 +348,6 @@ Start
     call        Line1
     Display     StartMsg
 
-    movlw       b'00000000'
-    movwf       Turn_counter
     clrf        Turn_counter
 
 Forward
@@ -356,10 +360,11 @@ Forward
     call        MotorForward
     call        GetIRData           ;Checks for presense of flashlight
     movf        Turn_counter,w
-    movwf       FSR2L
+    addlw       0x1C
+    movwf       FSR1L
     movlw       0x0
-    movwf       NumMed,0
-    clrf        FSR2L
+    movwf       INDF1
+    clrf        FSR1L
     btfss       RunStateBits,1
     goto        Forward
     call        GetPRData
@@ -389,28 +394,39 @@ MDone
     btfsc       RunStateBits,0
     addlw       b'00111100'
     movwf       StopTime
-    BinToBCD    StopTime,Zero
 
 ;; Operation is done, need to display results
     clrf        Machine_state
     bsf         Machine_state,3
     call        Clear_LCD
     call        Line1
-    Display     Done
+    Display     DoneLine1
     call        Line2
-    Display     DoneTime
-    call        BCDLDISPLAY
+    Display     DoneLine2
+    clrf        DataDisplay
     call        LogOperation
 
     goto        MainMenu
 
 ;; Machine State Routines ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;check MachineState to see if go to start or ret
-SetStart
+Pressed1
     btfss       Machine_state,0
-    return
+    goto        CheckMachineState
     clrf        Machine_state
     bsf         Machine_state, 1
+    return
+
+CheckMachineState
+    btfss       Machine_state,1
+    goto        DispMainMenu
+    return
+
+Pressed2
+    btfsc       Machine_state,0
+    goto        DisplayLogs
+    btfsc       Machine_state,3
+    goto        DisplayResults
     return
 
 ;Dispay Logs
@@ -515,7 +531,137 @@ Stop_Motor
     bsf         Motor_Step,6
     return
 
-;; General Subroutines ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Logs ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+DisplayLogs
+    return
+DisplayResults
+    clrf        EEADR
+    call        EEPROM_Read
+    movf        EEDATA,w
+    movwf       EEOffset
+    call        Clear_LCD
+    movlw       d'2'
+    cpfsgt      DataDisplay
+    goto        DateDisplay
+    movlw       d'3'
+    cpfsgt      DataDisplay
+    goto        TimeDisplay
+    movlw       d'4'
+    cpfsgt      DataDisplay
+    goto        NumberDisplay
+    goto        FlashlightDisplay
+
+DateDisplay
+    call        Line1
+    Display     DateMsg
+    movf        EEOffset,w
+    addlw       0x1
+    movwf       EEADR
+    call        EEPROM_Read
+    movf        EEDATA,w
+    movwf       BCDL
+    call        BCDLDISPLAY
+    movlw       "/"
+    call        WR_DATA
+    movf        EEOffset,w
+    addlw       0x2
+    movwf       EEADR
+    call        EEPROM_Read
+    movf        EEDATA,w
+    movwf       BCDL
+    call        BCDLDISPLAY
+    movlw       "/"
+    call        WR_DATA
+    movf        EEOffset,w
+    movwf       EEADR
+    call        EEPROM_Read
+    movf        EEDATA,w
+    movwf       BCDL
+    call        BCDLDISPLAY
+    call        Line2
+    Display     RetMsg
+    incf        DataDisplay
+    incf        DataDisplay
+    incf        DataDisplay
+    return
+
+TimeDisplay
+    call        Line1
+    Display     TimeMsg
+    movf        EEOffset,w
+    addlw       0x3
+    movwf       EEADR
+    call        EEPROM_Read
+    BinToBCD    EEDATA,Zero
+    call        BCDLDISPLAY
+    movlw       "s"
+    call        WR_DATA
+    call        Line2
+    Display     RetMsg
+    incf        DataDisplay
+    return
+
+NumberDisplay
+    call        Line1
+    Display     NumberMsg
+    movf        EEOffset,w
+    addlw       0x4
+    movwf       EEADR
+    call        EEPROM_Read
+    BinToBCD    EEDATA,Zero
+    call        BCDLDISPLAY
+    call        Line2
+    Display     RetMsg
+    incf        DataDisplay
+    return
+
+FlashlightDisplay
+    movlw       d'14'
+    cpfslt      DataDisplay
+    return
+    call        Line1
+    Display     FlashlightMsg
+    movf        DataDisplay,w
+    addlw       b'11111100'
+    movwf       BCDDISPLAY
+    BinToBCD    BCDDISPLAY,Zero
+    movf        BCDL,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    movlw       " "
+    call        WR_DATA
+    movf        EEOffset,w
+    addwf       DataDisplay,w
+    movwf       EEADR
+    call        EEPROM_Read
+    btfsc       EEDATA,7
+    goto        StatusDisplay
+    goto        EmptyDisplay
+
+StatusDisplay
+    bcf         EEDATA,7
+    incf        EEDATA
+    dcfsnz      EEDATA
+    Display     LED0
+    dcfsnz      EEDATA
+    Display     LED1
+    dcfsnz      EEDATA
+    Display     LED2
+    dcfsnz      EEDATA
+    Display     LED3
+    call        Line2
+    Display     RetMsg
+    incf        DataDisplay
+    return
+EmptyDisplay
+    Display     EmptyMsg
+    call        Line2
+    Display     RetMsg
+    incf        DataDisplay
+    return
+
+;; General Subroutines;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 GetIRData
     bcf         RunStateBits,2
     movlw       b'00111100'
@@ -588,7 +734,6 @@ GetPRData
 GetStatus
     clrf        NumHigh
     clrf        NumMed
-    clrf        NumLow
     movlw       d'180'
 
 ;Check number of highs
@@ -630,10 +775,11 @@ GetStatus
 
 ;If no high nor med, then no LED
     movf        Turn_counter,w
-    movwf       FSR2L
+    addlw       0x1C
+    movwf       FSR1L
     movlw       b'10000000'
-    movwf       NumMed,0
-    clrf        FSR2L
+    movwf       INDF1
+    clrf        FSR1L
     return
 
 GetHighStatus
@@ -662,25 +808,27 @@ GetMedStatus
 
 Set1LED
     movf        Turn_counter,w
-    movwf       FSR2L
+    addlw       0x1C
+    movwf       FSR1L
     movlw       b'10000001'
-    movwf       NumMed,0
-    clrf        FSR2L
+    movwf       INDF1
+    clrf        FSR1L
     return
 Set2LED
     movf        Turn_counter,w
-    movwf       FSR2L
+    addlw       0x1C
+    movwf       FSR1L
     movlw       b'10000010'
-    movwf       NumMed,0
-    clrf        FSR2L
+    movwf       INDF1
+    clrf        FSR1L
     return
 Set3LED
     movf        Turn_counter,w
-    movwf       FSR2L
+    addlw       0x1C
+    movwf       FSR1L
     movlw       b'10000011'
-    movwf       NumMed,0
-    clrf        FSR2L
-    return
+    movwf       INDF1
+    clrf        FSR1L
 
 SensorError
     call        Line1
@@ -786,6 +934,7 @@ Time
 DispMainMenu
     clrf        Machine_state
     bsf         Machine_state,0
+    call        Clear_LCD
     call        Line1
     call        show_RTC
     call        Line2
@@ -794,7 +943,7 @@ DispMainMenu
 
 LogOperation
     clrf        EEADR
-    call        EEPROM_READ
+    call        EEPROM_Read
     movf        EEDATA,w
     bcf         STATUS,3
     addlw       d'16'
@@ -807,7 +956,7 @@ LogOperation
     movwf       EEDATA
     movf        EEOffset,w
     movwf       EEADR
-    call        EEPROM_WRITE
+    call        EEPROM_Write
 ;Store Month of Operation
     rtc_read    0x05
     movf        0x75,w
@@ -815,7 +964,7 @@ LogOperation
     movf        EEOffset,w
     addlw       0x1
     movwf       EEADR
-    call        EEPROM_WRITE
+    call        EEPROM_Write
 ;Store Day of Operation
     rtc_read    0x04
     movf        0x75,w
@@ -823,82 +972,81 @@ LogOperation
     movf        EEOffset,w
     addlw       0x2
     movwf       EEADR
-    call        EEPROM_WRITE
-    return
+    call        EEPROM_Write
 ;Store time of Operation
-    movf        StopTime
+    movf        StopTime,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x3
     movwf       EEADR
-    call        EEPROM_WRITE
+    call        EEPROM_Write
 ;Store number of flashlights tested
-    movf        FlashlightCounter
+    movf        FlashlightCounter,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x4
     movwf       EEADR
-    call        EEPROM_WRITE
+    call        EEPROM_Write
 ;Store FlashlightData
-    movf        Flashlight1
+    movf        Flashlight1,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x5
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight2
+    call        EEPROM_Write
+    movf        Flashlight2,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x6
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight3
+    call        EEPROM_Write
+    movf        Flashlight3,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x7
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight4
+    call        EEPROM_Write
+    movf        Flashlight4,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x8
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight5
+    call        EEPROM_Write
+    movf        Flashlight5,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0x9
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight6
+    call        EEPROM_Write
+    movf        Flashlight6,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0xA
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight7
+    call        EEPROM_Write
+    movf        Flashlight7,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0xB
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight8
+    call        EEPROM_Write
+    movf        Flashlight8,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0xC
     movwf       EEADR
-    call        EEPROM_WRITE
-    movf        Flashlight9
+    call        EEPROM_Write
+    movf        Flashlight9,w
     movwf       EEDATA
     movf        EEOffset,w
     addlw       0xD
     movwf       EEADR
-    call        EEPROM_WRITE
+    call        EEPROM_Write
 ;move new offset into EEPROM
     clrf        EEADR
     movf        EEOffset,w
     movwf       EEDATA
-    call        EEPROM_WRITE
+    call        EEPROM_Write
     return
     
 
