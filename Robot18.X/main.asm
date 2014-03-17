@@ -229,6 +229,7 @@ Mainline
     call        LCD_Init
     call        RTC_init
     call        ISR_init
+    call        EEPROM_Init
     banksel     Line1Start
     call        DispMainMenu
 
@@ -301,6 +302,19 @@ ISR_init
     bsf         T0CON,TMR0ON
     
 	return
+
+EEPROM_Init
+    clrf        EEADRH
+    clrf        EEADR
+    call        EEPROM_Read
+    bcf         STATUS,Z
+    movf        EEDATA,w
+    andlw       0x0F
+    btfsc       STATUS,Z
+    return
+    clrf        EEDATA
+    call        EEPROM_Write
+    return
 
 ;; INTERRUPT SERVICES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ISR_Key
@@ -539,7 +553,6 @@ DisplayResults
     call        EEPROM_Read
     movf        EEDATA,w
     movwf       EEOffset
-    call        Clear_LCD
     movlw       d'2'
     cpfsgt      DataDisplay
     goto        DateDisplay
@@ -552,6 +565,7 @@ DisplayResults
     goto        FlashlightDisplay
 
 DateDisplay
+    call        Clear_LCD
     call        Line1
     Display     DateMsg
     movf        EEOffset,w
@@ -586,6 +600,7 @@ DateDisplay
     return
 
 TimeDisplay
+    call        Clear_LCD
     call        Line1
     Display     TimeMsg
     movf        EEOffset,w
@@ -602,6 +617,7 @@ TimeDisplay
     return
 
 NumberDisplay
+    call        Clear_LCD
     call        Line1
     Display     NumberMsg
     movf        EEOffset,w
@@ -609,7 +625,10 @@ NumberDisplay
     movwf       EEADR
     call        EEPROM_Read
     BinToBCD    EEDATA,Zero
-    call        BCDLDISPLAY
+    movf        BCDL,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
     call        Line2
     Display     RetMsg
     incf        DataDisplay
@@ -619,6 +638,7 @@ FlashlightDisplay
     movlw       d'14'
     cpfslt      DataDisplay
     return
+    call        Clear_LCD
     call        Line1
     Display     FlashlightMsg
     movf        DataDisplay,w
@@ -945,9 +965,9 @@ LogOperation
     clrf        EEADR
     call        EEPROM_Read
     movf        EEDATA,w
-    bcf         STATUS,3
+    bcf         STATUS,OV
     addlw       d'16'
-    btfss       STATUS,3
+    btfsc       STATUS,OV
     addlw       d'16'
     movwf       EEOffset
 ;Stores Year of operation
