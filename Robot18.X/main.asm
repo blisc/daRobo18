@@ -32,6 +32,7 @@ cblock 0x0
     ;bit 2 - running motor
     ;bit 3 - displaying a single log
     ;bit 4 - choosing log
+    ;bit 5 - end of logs
     Motor_Step
     Turn_counter
     FlashlightCounter
@@ -74,6 +75,7 @@ cblock 0x0
     Flashlight8
     Flashlight9
     EEOffset
+    NumTests
 endc
 
 ;; ENTRY VECTORS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -128,6 +130,12 @@ LED2
     db      "1-LED Fail", 0
 LED3
     db      "Pass", 0
+NoLogMsg
+    db      "End of Logs",0
+FinalRetMsg
+    db      "1:Main",0
+LogRetMsg
+    db      "2:Next 3:View",0
 
 ;; MACROS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 Display macro label
@@ -311,6 +319,14 @@ EEPROM_Init
     movf        EEDATA,w
     andlw       0x0F
     btfsc       STATUS,Z
+    goto        EEPROM_Init2
+    clrf        EEDATA
+    call        EEPROM_Write
+EEPROM_Init2
+    incf        EEADR
+    call        EEPROM_Read
+    movlw       d'15'
+    cpfsgt      EEDATA
     return
     clrf        EEDATA
     call        EEPROM_Write
@@ -331,6 +347,8 @@ ISR_Key
     goto        Pressed1
     dcfsnz      Key_Pressed,f
     goto        Pressed2
+    dcfsnz      Key_Pressed,f
+    goto        Pressed3
     return 
 
 ISR_Timer0
@@ -438,11 +456,17 @@ CheckMachineState
 
 Pressed2
     btfsc       Machine_state,0
-    goto        DisplayLogs
+    goto        SetLogs
     btfsc       Machine_state,3
-    goto        DisplayResults
+    goto        SetResults
+    btfsc       Machine_state,4
+    goto        NextLog
     return
 
+Pressed3
+    btfsc       Machine_state,4
+    goto        DisplayLogData
+    return
 ;Dispay Logs
 ;Logs
 ;    clrf        Machine_state
@@ -520,7 +544,7 @@ Step_Done
 
 MotorForward
     bsf         Machine_state,2
-    movlw       d'34'               ;Step_counter 40 => 40*1.8/2 = 36
+    movlw       d'50'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bsf         Motor_Step,7        ;Set forward
     bcf         Motor_Step,6
@@ -528,7 +552,7 @@ MotorForward
 
 MotorBackward
     bsf         Machine_state,2
-    movlw       d'34'               ;Step_counter 40 => 40*1.8/2 = 36
+    movlw       d'50'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bcf         Motor_Step,7        ;Set backward
     bcf         Motor_Step,6
@@ -546,13 +570,64 @@ Stop_Motor
     return
 
 ;; Logs ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-DisplayLogs
-    return
-DisplayResults
+SetLogs
+    clrf        Machine_state
+    bsf         Machine_state,4
     clrf        EEADR
     call        EEPROM_Read
     movf        EEDATA,w
     movwf       EEOffset
+    clrf        EEADR
+    incf        EEADR
+    call        EEPROM_Read
+    movf        EEDATA,w
+    movwf       NumTests
+    movf        NumTests,w
+    cpfseq      Zero
+    goto        DateDisplay
+    goto        EndofLogs
+
+EndofLogs
+    clrf        Machine_state
+    bsf         Machine_state,5
+    call        Clear_LCD
+    call        Line1
+    Display     NoLogMsg
+    call        Line2
+    Display     FinalRetMsg
+    return
+
+NextLog
+    dcfsnz      NumTests
+    goto        EndofLogs
+    movf        EEOffset,w
+    bcf         STATUS,Z
+    addlw       b'11110000'
+    btfsc       STATUS,Z
+    addlw       b'11110000'
+    movwf       EEOffset
+    call        DateDisplay
+    return
+
+DisplayLogData
+    movlw       d'3'
+    movwf       DataDisplay
+    clrf        Machine_state
+    bsf         Machine_state,3
+    goto        DisplayResults
+
+LogRetDisplay
+    Display     LogRetMsg
+    return
+
+SetResults
+    clrf        EEADR
+    call        EEPROM_Read
+    movf        EEDATA,w
+    movwf       EEOffset
+    goto        DisplayResults
+
+DisplayResults
     movlw       d'2'
     cpfsgt      DataDisplay
     goto        DateDisplay
@@ -593,7 +668,9 @@ DateDisplay
     movwf       BCDL
     call        BCDLDISPLAY
     call        Line2
-    Display     RetMsg
+    btfss       Machine_state,3
+    goto        LogRetDisplay
+    Display     RetMsg    
     incf        DataDisplay
     incf        DataDisplay
     incf        DataDisplay
@@ -670,15 +747,20 @@ StatusDisplay
     Display     LED2
     dcfsnz      EEDATA
     Display     LED3
-    call        Line2
-    Display     RetMsg
-    incf        DataDisplay
-    return
+    goto        RetDisplay
 EmptyDisplay
     Display     EmptyMsg
-    call        Line2
-    Display     RetMsg
+    goto        RetDisplay
+RetDisplay
     incf        DataDisplay
+    call        Line2
+    movlw       d'13'
+    cpfsgt      DataDisplay
+    goto        RetDisplay1
+    Display     FinalRetMsg
+    return
+RetDisplay1
+    Display     RetMsg
     return
 
 ;; General Subroutines;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -742,7 +824,7 @@ GetPRData
     movf        ADRESH,w
     movwf       Resistor5
 
-    movlw       b'000111101'
+    movlw       b'00011101'
     movwf       ADCON0
     bsf         ADCON0,1
     btfsc       ADCON0,1
@@ -754,7 +836,7 @@ GetPRData
 GetStatus
     clrf        NumHigh
     clrf        NumMed
-    movlw       d'180'
+    movlw       d'170'
 
 ;Check number of highs
     cpfslt      Resistor1
@@ -794,6 +876,7 @@ GetStatus
     goto        GetMedStatus
 
 ;If no high nor med, then no LED
+    ;goto        SensorError
     movf        Turn_counter,w
     addlw       0x1C
     movwf       FSR1L
@@ -961,15 +1044,25 @@ DispMainMenu
     Display     Line1Start
     return
 
+IncfNumTests
+    incf        EEDATA
+    call        EEPROM_Write
+    return
+
 LogOperation
     clrf        EEADR
     call        EEPROM_Read
     movf        EEDATA,w
-    bcf         STATUS,OV
+    bcf         STATUS,Z
     addlw       d'16'
-    btfsc       STATUS,OV
+    btfsc       STATUS,Z
     addlw       d'16'
     movwf       EEOffset
+    incf        EEADR
+    call        EEPROM_Read
+    movlw       d'14'
+    cpfsgt      EEDATA
+    call        IncfNumTests
 ;Stores Year of operation
     rtc_read    0x06
     movf        0x75,w
@@ -1132,7 +1225,7 @@ set_rtc_time
 		rtc_set	0x05,	B'00000010'		; Month
 		rtc_set	0x04,	B'00100011'		; Date
 		rtc_set	0x03,	B'00000111'		; Day
-		rtc_set	0x02,	B'00100000'		; Hours
+		rtc_set	0x02,	B'00010110'		; Hours
 		rtc_set	0x01,	B'00101000'		; Minutes
 		rtc_set	0x00,	B'00000000'		; Seconds
 		return

@@ -60,7 +60,7 @@ LCD_Init
 	call    lcdLongDelay
 
 	; display on/off
-	movlw	b'00001110'
+	movlw	b'00001100'
 	call	WR_INS
 	call    lcdLongDelay
 	call    lcdLongDelay
