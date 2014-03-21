@@ -33,6 +33,7 @@ cblock 0x0
     ;bit 3 - displaying a single log
     ;bit 4 - choosing log
     ;bit 5 - end of logs
+    ;bit 6 - displayings single log in EEPROM
     Motor_Step
     Turn_counter
     FlashlightCounter
@@ -461,6 +462,8 @@ Pressed2
     goto        SetResults
     btfsc       Machine_state,4
     goto        NextLog
+    btfsc       Machine_state,6
+    goto        DisplayResults
     return
 
 Pressed3
@@ -494,7 +497,7 @@ Step
 Step1
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00000001'
+    iorlw       b'00100001'
     movwf       LATC               ;Set moto to first squence
     bcf         Motor_Step,0
     btfsc       Motor_Step,7
@@ -503,7 +506,7 @@ Step1
 Step2
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00000100'
+    iorlw       b'00000101'
     movwf       LATC               ;Set moto to second squence
     bcf         Motor_Step,1
     btfsc       Motor_Step,7
@@ -512,7 +515,7 @@ Step2
 Step3
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00000010'
+    iorlw       b'00000110'
     movwf       LATC               ;Set moto to thrid squence
     bcf         Motor_Step,2
     btfsc       Motor_Step,7
@@ -521,7 +524,7 @@ Step3
 Step4
     movf        PORTC,w
     andlw       b'00011000'
-    iorlw       b'00100000'
+    iorlw       b'00100010'
     movwf       LATC               ;Set moto to fourth squence
     bcf         Motor_Step,3
     btfsc       Motor_Step,7
@@ -613,7 +616,7 @@ DisplayLogData
     movlw       d'3'
     movwf       DataDisplay
     clrf        Machine_state
-    bsf         Machine_state,3
+    bsf         Machine_state,6
     goto        DisplayResults
 
 LogRetDisplay
