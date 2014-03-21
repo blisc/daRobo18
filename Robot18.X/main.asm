@@ -122,13 +122,13 @@ FlashlightMsg
     db      "Slot", 0
 EmptyMsg
     db      "Empty", 0
-LED0
+LED
     db      "3-LED Fail", 0
-LED1
+LEDD
     db      "2-LED Fail", 0
-LED2
+LEDDD
     db      "1-LED Fail", 0
-LED3
+LEDDDD
     db      "Pass", 0
 NoLogMsg
     db      "End of Logs",0
@@ -732,21 +732,34 @@ FlashlightDisplay
     addwf       DataDisplay,w
     movwf       EEADR
     call        EEPROM_Read
-    btfsc       EEDATA,7
+    movf        EEDATA,w
+    movwf       Flashlight1
+    btfsc       Flashlight1,7
     goto        StatusDisplay
     goto        EmptyDisplay
 
 StatusDisplay
-    bcf         EEDATA,7
-    incf        EEDATA
-    dcfsnz      EEDATA
-    Display     LED0
-    dcfsnz      EEDATA
-    Display     LED1
-    dcfsnz      EEDATA
-    Display     LED2
-    dcfsnz      EEDATA
-    Display     LED3
+    bcf         Flashlight1,7
+    incf        Flashlight1,f
+    dcfsnz      Flashlight1,f
+    goto        DisplayA
+    dcfsnz      Flashlight1,f
+    goto        DisplayB
+    dcfsnz      Flashlight1,f
+    goto        DisplayC
+    goto        DisplayD
+   
+DisplayA
+    Display     LED
+    goto        RetDisplay
+DisplayB
+    Display     LEDD
+    goto        RetDisplay
+DisplayC
+    Display     LEDDD
+    goto        RetDisplay
+DisplayD
+    Display     LEDDDD
     goto        RetDisplay
 EmptyDisplay
     Display     EmptyMsg
@@ -932,6 +945,7 @@ Set3LED
     movlw       b'10000011'
     movwf       INDF1
     clrf        FSR1L
+    return
 
 SensorError
     call        Line1
