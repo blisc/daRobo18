@@ -852,8 +852,8 @@ GetPRData
 GetStatus
     clrf        NumHigh
     clrf        NumMed
+    call        SensorError     ;Sensor Checking
     movlw       d'170'
-
 ;Check number of highs
     cpfslt      Resistor1
     incf        NumHigh
@@ -892,7 +892,6 @@ GetStatus
     goto        GetMedStatus
 
 ;If no high nor med, then no LED
-    ;goto        SensorError
     movf        Turn_counter,w
     addlw       0x1C
     movwf       FSR1L
@@ -902,26 +901,29 @@ GetStatus
     return
 
 GetHighStatus
-    dcfsnz      NumHigh
+    movff       NumHigh,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
+    call        BCDLDISPLAY
+    dcfsnz      NumHigh,f
     goto        Set1LED
-    dcfsnz      NumHigh
+    dcfsnz      NumHigh,f
     goto        Set2LED
-    dcfsnz      NumHigh
+    dcfsnz      NumHigh,f
     goto        Set3LED
     goto        SensorError
 
 GetMedStatus
-    dcfsnz      NumMed
-    nop
-    dcfsnz      NumMed
+    movff       NumMed,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
+    call        BCDLDISPLAY
+    decf        NumMed,f
+    dcfsnz      NumMed,f
     goto        Set1LED
-    dcfsnz      NumMed
-    nop
-    dcfsnz      NumMed
+    decf        NumMed,f
+    dcfsnz      NumMed,f
     goto        Set2LED
-    dcfsnz      NumMed
-    nop
-    dcfsnz      NumMed
+    decf        NumMed,f
+    dcfsnz      NumMed,f
     goto        Set3LED
     goto        SensorError
 
@@ -953,7 +955,8 @@ Set3LED
 SensorError
     call        Line1
 
-    BinToBCD    Resistor1,Zero
+    movff       Resistor1,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
     movf        BCDH,w
     andlw       0x0F
     movwf       BCDDISPLAY
@@ -962,7 +965,18 @@ SensorError
     movlw       " "
     call        WR_DATA
 
-    BinToBCD    Resistor2,Zero
+    movff       Resistor2,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
+    movf        BCDH,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    call        BCDLDISPLAY
+    movlw       " "
+    call        WR_DATA
+    
+    movff       Resistor3,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
     movf        BCDH,w
     andlw       0x0F
     movwf       BCDDISPLAY
@@ -971,16 +985,8 @@ SensorError
     movlw       " "
     call        WR_DATA
 
-    BinToBCD    Resistor3,Zero
-    movf        BCDH,w
-    andlw       0x0F
-    movwf       BCDDISPLAY
-    BCD_Display BCDDISPLAY
-    call        BCDLDISPLAY
-    movlw       " "
-    call        WR_DATA
-
-    BinToBCD    Resistor4,Zero
+    movff       Resistor4,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
     movf        BCDH,w
     andlw       0x0F
     movwf       BCDDISPLAY
@@ -991,7 +997,8 @@ SensorError
 
     call        Line2
 
-    BinToBCD    Resistor5,Zero
+    movff       Resistor5,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
     movf        BCDH,w
     andlw       0x0F
     movwf       BCDDISPLAY
@@ -1000,7 +1007,8 @@ SensorError
     movlw       " "
     call        WR_DATA
 
-    BinToBCD    Resistor6,Zero
+    movff       Resistor6,ResistorDelay
+    BinToBCD    ResistorDelay,Zero
     movf        BCDH,w
     andlw       0x0F
     movwf       BCDDISPLAY
@@ -1010,10 +1018,12 @@ SensorError
     call        WR_DATA
 
     bcf         RunStateBits,3
-SensorErrorWait
-    btfss       RunStateBits,3
-    goto        SensorErrorWait
-    Display     StartMsg
+;SensorErrorWait
+;    btfss       RunStateBits,3
+;    goto        SensorErrorWait
+;    call        Clear_LCD
+;    call        Line1
+;    Display     StartMsg
     return
 
 RDelayDec
