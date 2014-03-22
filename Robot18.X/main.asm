@@ -965,6 +965,7 @@ GetStatus
     cpfslt      Value1
     goto        Set2LED
     movlw       d'2'
+    cpfslt      Value1
     goto        Set1LED
     goto        SetEmpty
 ;    clrf        NumHigh
