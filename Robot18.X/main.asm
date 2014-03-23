@@ -77,6 +77,9 @@ cblock 0x0
     Flashlight9
     EEOffset
     NumTests
+    NumZeros
+    ZeroBits    ;high is RX is zero
+    ZeroTest
     ;State1
     ;State2
     ;State3
@@ -875,159 +878,150 @@ GetPRData
     return
 
 GetStatus
-;    bcf         Resistor1,0
-;    rrncf       Resistor1,f
-;    bcf         Resistor2,0
-;    rrncf       Resistor2,f
-;    bcf         Resistor3,0
-;    rrncf       Resistor3,f
-;    bcf         Resistor4,0
-;    rrncf       Resistor4,f
-;    bcf         Resistor5,0
-;    rrncf       Resistor5,f
-;    bcf         Resistor6,0
-;    rrncf       Resistor6,f
+    clrf        NumZeros
+    clrf        ZeroBits
+    call        SensorError
+    movlw       d'2'
+    cpfsgt      Resistor1
+    bsf         ZeroBits,0
+    cpfsgt      Resistor2
+    bsf         ZeroBits,1
+    cpfsgt      Resistor3
+    bsf         ZeroBits,2
+    cpfsgt      Resistor4
+    bsf         ZeroBits,3
+    cpfsgt      Resistor5
+    bsf         ZeroBits,4
+    cpfsgt      Resistor6
+    bsf         ZeroBits,5
 
-;    clrf        State1
-;    movf        Resistor1,w
-;    addwf       Resistor2,w
-;    movwf       NumMed
-;    movlw       d'60'
-;    cpfslt      NumMed
-;    incf        State1
-;    movlw       d'20'
-;    cpfslt      NumMed
-;    incf        State1
+    btfsc       ZeroBits,0
+    incf        NumZeros
+    btfsc       ZeroBits,1
+    incf        NumZeros
+    btfsc       ZeroBits,2
+    incf        NumZeros
+    btfsc       ZeroBits,3
+    incf        NumZeros
+    btfsc       ZeroBits,4
+    incf        NumZeros
+    btfsc       ZeroBits,5
+    incf        NumZeros
 
-;    clrf        State2
-;    movf        Resistor3,w
-;    addwf       Resistor4,w
-;    movwf       NumMed
-;    movlw       d'60'
-;    cpfslt      NumMed
-;    incf        State2
-;    movlw       d'20'
-;    cpfslt      NumMed
-;    incf        State2
-
-;    clrf        State3
-;    movf        Resistor5,w
-;    addwf       Resistor6,w
-;    movwf       NumMed
-;    movlw       d'60'
-;    cpfslt      NumMed
-;    incf        State3
-;    movlw       d'20'
-;    cpfslt      NumMed
-;    incf        State3
-
-;    clrf        State4
-;    movf        Resistor6,w
-;    addwf       Resistor1,w
-;    movwf       NumMed
-;    movlw       d'60'
-;    cpfslt      NumMed
-;    incf        State4
-;    movlw       d'20'
-;    cpfslt      NumMed
-;    incf        State4
-
-;    clrf        State5
-;    movf        Resistor2,w
-;    addwf       Resistor3,w
-;    movwf       NumMed
-;    movlw       d'60'
-;    cpfslt      NumMed
-;    incf        State5
-;    movlw       d'20'
-;    cpfslt      NumMed
-;    incf        State5
-
-;    clrf        State6
-;    movf        Resistor4,w
-;    addwf       Resistor5,w
-;    movwf       NumMed
-;    movlw       d'60'
-;    cpfslt      NumMed
-;    incf        State6
-;    movlw       d'20'
-;    cpfslt      NumMed
-;    incf        State6
-
-;    clrf        Value1
-;    clrf        Value2
-
-;    movf        State1,w
-;    addwf       Value1,f
-;    movf        State2,w
-;    addwf       Value1,f
-;    movf        State3,w
-;    addwf       Value1,f
-
-;    movf        State4,w
-;    addwf       Value2,f
-;    movf        State5,w
-;    addwf       Value2,f
-;    movf        State6,w
-;    addwf       Value2,f
-
-;    movf        Value2,w
-;    cpfseq      Value1
-;    goto        SensorError
-
-;    movlw       d'6'
-;    cpfslt      Value1
-;    goto        Set3LED
-;    movlw       d'4'
-;    cpfslt      Value1
-;    goto        Set2LED
-;    movlw       d'2'
-;    cpfslt      Value1
-;    goto        Set1LED
-;    goto        SetEmpty
-
-    clrf        NumHigh
-    clrf        NumMed
-    call        SensorError     ;Sensor Checking
-
-    movlw       d'160'
-;Check number of highs
-    cpfslt      Resistor1
-    incf        NumHigh
-    cpfslt      Resistor2
-    incf        NumHigh
-    cpfslt      Resistor3
-    incf        NumHigh
-    cpfslt      Resistor4
-    incf        NumHigh
-    cpfslt      Resistor5
-    incf        NumHigh
-    cpfslt      Resistor6
-    incf        NumHigh
-
-    movlw       0x0
-    cpfseq      NumHigh
-    goto        GetHighStatus
-
-;if no high, then check medium
-    movlw       d'40'
-    cpfslt      Resistor1
-    incf        NumMed
-    cpfslt      Resistor2
-    incf        NumMed
-    cpfslt      Resistor3
-    incf        NumMed
-    cpfslt      Resistor4
-    incf        NumMed
-    cpfslt      Resistor5
-    incf        NumMed
-    cpfslt      Resistor6
-    incf        NumMed
-
-    movlw       0x0
-    cpfseq      NumMed
-    goto        GetMedStatus
+    movlw       d'5'
+    cpfslt      NumZeros
     goto        Set0LED
+
+    movf        ZeroBits,w
+    andlw       b'00000111'
+    movwf       ZeroTest
+    movlw       b'00000111'
+    cpfseq      ZeroTest
+    goto        Skip1
+    goto        Set1LED
+Skip1
+    movf        ZeroBits,w
+    andlw       b'00001110'
+    movwf       ZeroTest
+    movlw       b'00001110'
+    cpfseq      ZeroTest
+    goto        Skip2
+    goto        Set1LED
+Skip2
+    movf        ZeroBits,w
+    andlw       b'00011100'
+    movwf       ZeroTest
+    movlw       b'00011100'
+    cpfseq      ZeroTest
+    goto        Skip3
+    goto        Set1LED
+Skip3
+    movf        ZeroBits,w
+    andlw       b'00111000'
+    movwf       ZeroTest
+    movlw       b'00111000'
+    cpfseq      ZeroTest
+    goto        Skip4
+    goto        Set1LED
+Skip4
+    movf        ZeroBits,w
+    andlw       b'00110001'
+    movwf       ZeroTest
+    movlw       b'00110001'
+    cpfseq      ZeroTest
+    goto        Skip5
+    goto        Set1LED
+Skip5
+    movf        ZeroBits,w
+    andlw       b'00100011'
+    movwf       ZeroTest
+    movlw       b'00100011'
+    cpfseq      ZeroTest
+    goto        Skip6
+    goto        Set1LED
+
+Skip6
+    btfsc       ZeroBits,0
+    goto        TestPR1
+    btfsc       ZeroBits,1
+    goto        TestPR2
+    btfsc       ZeroBits,2
+    goto        TestPR3
+    btfsc       ZeroBits,3
+    goto        TestPR4
+    btfsc       ZeroBits,4
+    goto        TestPR5
+    btfsc       ZeroBits,5
+    goto        TestPR6
+    goto        Set3LED
+
+TestPR1
+    movlw       d'100'
+    cpfsgt      Resistor6
+    goto        Set2LED
+    cpfsgt      Resistor2
+    goto        Set2LED
+    goto        Set3LED
+TestPR2
+    movlw       d'100'
+    cpfsgt      Resistor1
+    goto        Set2LED
+    cpfsgt      Resistor3
+    goto        Set2LED
+    goto        Set3LED
+    return
+TestPR3
+    movlw       d'100'
+    cpfsgt      Resistor2
+    goto        Set2LED
+    cpfsgt      Resistor4
+    goto        Set2LED
+    goto        Set3LED
+    return
+TestPR4
+    movlw       d'100'
+    cpfsgt      Resistor3
+    goto        Set2LED
+    cpfsgt      Resistor5
+    goto        Set2LED
+    goto        Set3LED
+    return
+TestPR5
+    movlw       d'100'
+    cpfsgt      Resistor4
+    goto        Set2LED
+    cpfsgt      Resistor6
+    goto        Set2LED
+    goto        Set3LED
+    return
+TestPR6
+    movlw       d'100'
+    cpfsgt      Resistor5
+    goto        Set2LED
+    cpfsgt      Resistor1
+    goto        Set2LED
+    goto        Set3LED
+    return
 
 Set0LED
 ;If no high nor med, then no LED
@@ -1445,3 +1439,158 @@ EEPROM_Refresh_Loop ; Loop to refresh array
     BCF EECON1, WREN ; Disable writes
 return
 end
+
+;    bcf         Resistor1,0
+;    rrncf       Resistor1,f
+;    bcf         Resistor2,0
+;    rrncf       Resistor2,f
+;    bcf         Resistor3,0
+;    rrncf       Resistor3,f
+;    bcf         Resistor4,0
+;    rrncf       Resistor4,f
+;    bcf         Resistor5,0
+;    rrncf       Resistor5,f
+;    bcf         Resistor6,0
+;    rrncf       Resistor6,f
+
+;    clrf        State1
+;    movf        Resistor1,w
+;    addwf       Resistor2,w
+;    movwf       NumMed
+;    movlw       d'60'
+;    cpfslt      NumMed
+;    incf        State1
+;    movlw       d'20'
+;    cpfslt      NumMed
+;    incf        State1
+
+;    clrf        State2
+;    movf        Resistor3,w
+;    addwf       Resistor4,w
+;    movwf       NumMed
+;    movlw       d'60'
+;    cpfslt      NumMed
+;    incf        State2
+;    movlw       d'20'
+;    cpfslt      NumMed
+;    incf        State2
+
+;    clrf        State3
+;    movf        Resistor5,w
+;    addwf       Resistor6,w
+;    movwf       NumMed
+;    movlw       d'60'
+;    cpfslt      NumMed
+;    incf        State3
+;    movlw       d'20'
+;    cpfslt      NumMed
+;    incf        State3
+
+;    clrf        State4
+;    movf        Resistor6,w
+;    addwf       Resistor1,w
+;    movwf       NumMed
+;    movlw       d'60'
+;    cpfslt      NumMed
+;    incf        State4
+;    movlw       d'20'
+;    cpfslt      NumMed
+;    incf        State4
+
+;    clrf        State5
+;    movf        Resistor2,w
+;    addwf       Resistor3,w
+;    movwf       NumMed
+;    movlw       d'60'
+;    cpfslt      NumMed
+;    incf        State5
+;    movlw       d'20'
+;    cpfslt      NumMed
+;    incf        State5
+
+;    clrf        State6
+;    movf        Resistor4,w
+;    addwf       Resistor5,w
+;    movwf       NumMed
+;    movlw       d'60'
+;    cpfslt      NumMed
+;    incf        State6
+;    movlw       d'20'
+;    cpfslt      NumMed
+;    incf        State6
+
+;    clrf        Value1
+;    clrf        Value2
+
+;    movf        State1,w
+;    addwf       Value1,f
+;    movf        State2,w
+;    addwf       Value1,f
+;    movf        State3,w
+;    addwf       Value1,f
+
+;    movf        State4,w
+;    addwf       Value2,f
+;    movf        State5,w
+;    addwf       Value2,f
+;    movf        State6,w
+;    addwf       Value2,f
+
+;    movf        Value2,w
+;    cpfseq      Value1
+;    goto        SensorError
+
+;    movlw       d'6'
+;    cpfslt      Value1
+;    goto        Set3LED
+;    movlw       d'4'
+;    cpfslt      Value1
+;    goto        Set2LED
+;    movlw       d'2'
+;    cpfslt      Value1
+;    goto        Set1LED
+;    goto        SetEmpty
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;    clrf        NumHigh
+;    clrf        NumMed
+;    call        SensorError     ;Sensor Checking
+
+;    movlw       d'160'
+;Check number of highs
+;    cpfslt      Resistor1
+;    incf        NumHigh
+;    cpfslt      Resistor2
+;    incf        NumHigh
+;    cpfslt      Resistor3
+;    incf        NumHigh
+;    cpfslt      Resistor4
+;    incf        NumHigh
+;    cpfslt      Resistor5
+;    incf        NumHigh
+;    cpfslt      Resistor6
+;    incf        NumHigh
+
+;    movlw       0x0
+;    cpfseq      NumHigh
+;    goto        GetHighStatus
+
+;if no high, then check medium
+;    movlw       d'40'
+;    cpfslt      Resistor1
+;    incf        NumMed
+;    cpfslt      Resistor2
+;    incf        NumMed
+;    cpfslt      Resistor3
+;    incf        NumMed
+;    cpfslt      Resistor4
+;    incf        NumMed
+;    cpfslt      Resistor5
+;    incf        NumMed
+;    cpfslt      Resistor6
+;    incf        NumMed
+
+;    movlw       0x0
+;    cpfseq      NumMed
+;    goto        GetMedStatus
+;    goto        Set0LED
