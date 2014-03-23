@@ -80,6 +80,8 @@ cblock 0x0
     NumZeros
     ZeroBits    ;high is RX is zero
     ZeroTest
+    PRSumH
+    PRSumL
     ;State1
     ;State2
     ;State3
@@ -424,6 +426,7 @@ Back
     goto        Back
 
 MDone
+    clrf        LATC
     rtc_read	0x00
     movf        0x75,w
     andlw       b'01111111'
@@ -881,7 +884,7 @@ GetStatus
     clrf        NumZeros
     clrf        ZeroBits
     call        SensorError
-    movlw       d'2'
+    movlw       d'8'
     cpfsgt      Resistor1
     bsf         ZeroBits,0
     cpfsgt      Resistor2
@@ -918,7 +921,7 @@ GetStatus
     movlw       b'00000111'
     cpfseq      ZeroTest
     goto        Skip1
-    goto        Set1LED
+    goto        SumPR
 Skip1
     movf        ZeroBits,w
     andlw       b'00001110'
@@ -926,7 +929,7 @@ Skip1
     movlw       b'00001110'
     cpfseq      ZeroTest
     goto        Skip2
-    goto        Set1LED
+    goto        SumPR
 Skip2
     movf        ZeroBits,w
     andlw       b'00011100'
@@ -934,7 +937,7 @@ Skip2
     movlw       b'00011100'
     cpfseq      ZeroTest
     goto        Skip3
-    goto        Set1LED
+    goto        SumPR
 Skip3
     movf        ZeroBits,w
     andlw       b'00111000'
@@ -942,7 +945,7 @@ Skip3
     movlw       b'00111000'
     cpfseq      ZeroTest
     goto        Skip4
-    goto        Set1LED
+    goto        SumPR
 Skip4
     movf        ZeroBits,w
     andlw       b'00110001'
@@ -950,7 +953,7 @@ Skip4
     movlw       b'00110001'
     cpfseq      ZeroTest
     goto        Skip5
-    goto        Set1LED
+    goto        SumPR
 Skip5
     movf        ZeroBits,w
     andlw       b'00100011'
@@ -958,7 +961,7 @@ Skip5
     movlw       b'00100011'
     cpfseq      ZeroTest
     goto        Skip6
-    goto        Set1LED
+    goto        SumPR
 
 Skip6
     btfsc       ZeroBits,0
@@ -974,6 +977,62 @@ Skip6
     btfsc       ZeroBits,5
     goto        TestPR6
     goto        Set3LED
+
+SumPR
+    clrf        PRSumH
+    clrf        PRSumL
+    movf        Resistor1,w
+    bcf         STATUS,OV
+    addwf       PRSumL,f
+    btfsc       STATUS,OV
+    incf        PRSumH
+    movf        Resistor2,w
+    bcf         STATUS,OV
+    addwf       PRSumL,f
+    btfsc       STATUS,OV
+    incf        PRSumH
+    movf        Resistor3,w
+    bcf         STATUS,OV
+    addwf       PRSumL,f
+    btfsc       STATUS,OV
+    incf        PRSumH
+    movf        Resistor4,w
+    bcf         STATUS,OV
+    addwf       PRSumL,f
+    btfsc       STATUS,OV
+    incf        PRSumH
+    movf        Resistor5,w
+    bcf         STATUS,OV
+    addwf       PRSumL,f
+    btfsc       STATUS,OV
+    incf        PRSumH
+    movf        Resistor6,w
+    bcf         STATUS,OV
+    addwf       PRSumL,f
+    btfsc       STATUS,OV
+    incf        PRSumH
+
+    BinToBCD    PRSumL,PRSumH
+    swapf       BCDH,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    movf        BCDH,w
+    andlw       0x0F
+    movwf       BCDDISPLAY
+    BCD_Display BCDDISPLAY
+    call        BCDLDISPLAY
+    movlw       d'2'
+    cpfslt      PRSumH
+    goto        Set2LED
+    movlw       d'0'
+    cpfsgt      PRSumH
+    goto        Set1LED
+    movlw       d'44'
+    cpfsgt      PRSumL
+    goto        Set1LED
+    goto        Set2LED
+    return
 
 TestPR1
     movlw       d'100'
