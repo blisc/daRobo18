@@ -29,7 +29,7 @@ cblock 0x0
     Machine_state
     ;bit 0 - main menu
     ;bit 1 - machine is runing
-    ;bit 2 - running motor
+    ;bit 2 - motor
     ;bit 3 - displaying a single log
     ;bit 4 - choosing log
     ;bit 5 - end of logs
@@ -300,7 +300,7 @@ RTC_init
 ;RTC SET-UP stuFFs
     call 	   i2c_common_setup
     ;rtc_resetAll
-    ;call	   set_rtc_time
+   ;call	   set_rtc_time
     return
 
 ;Enables RB1 pin, Sets RB1 to high and TMR0 to low priority
@@ -421,11 +421,12 @@ Forward
 
 Back
     dcfsnz      Turn_counter
-    goto        MDone
+    goto        MotorZero
     call        MotorBackward
     goto        Back
 
-MDone
+MotorZero
+    call        MotorZeroCorrect
     clrf        LATC
     rtc_read	0x00
     movf        0x75,w
@@ -562,34 +563,53 @@ Step_Done
     return
 
 MotorForward
-    bsf         Machine_state,2
     movlw       d'50'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bsf         Motor_Step,7        ;Set forward
     bcf         Motor_Step,6
+    bsf         Machine_state,2
     goto        WaitMotor
 
 MotorBackward
-    bsf         Machine_state,2
     movlw       d'50'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bcf         Motor_Step,7        ;Set backward
     bcf         Motor_Step,6
+    bsf         Machine_state,2
     goto        WaitMotor
 
 MotorForCorrect
-    bsf         Machine_state,2
-    movlw       d'15'               ;Step_counter 40 => 40*1.8/2 = 36
+    movlw       d'16'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bsf         Motor_Step,7        ;Set forward
     bcf         Motor_Step,6
+    bsf         Machine_state,2
     goto        WaitMotor
 MotorBackCorrect
-    bsf         Machine_state,2
+    movlw       d'7'
+    cpfseq      Turn_counter
+    goto        BackCorrect15
+    goto        BackCorrect17
+BackCorrect15
     movlw       d'15'               ;Step_counter 40 => 40*1.8/2 = 36
+    movwf       Step_Counter
+    goto        BackCorrectEnd
+BackCorrect17
+    movlw       d'18'
+    movwf       Step_Counter
+    goto        BackCorrectEnd
+BackCorrectEnd
+    bcf         Motor_Step,7        ;Set backward
+    bcf         Motor_Step,6
+    bsf         Machine_state,2
+    goto        WaitMotor
+
+MotorZeroCorrect
+    movlw       d'6'               ;Step_counter 40 => 40*1.8/2 = 36
     movwf       Step_Counter
     bcf         Motor_Step,7        ;Set backward
     bcf         Motor_Step,6
+    bsf         Machine_state,2
     goto        WaitMotor
 
 WaitMotor
@@ -982,37 +1002,41 @@ SumPR
     clrf        PRSumH
     clrf        PRSumL
     movf        Resistor1,w
-    bcf         STATUS,OV
+    bcf         STATUS,C
     addwf       PRSumL,f
-    btfsc       STATUS,OV
+    btfsc       STATUS,C
     incf        PRSumH
     movf        Resistor2,w
-    bcf         STATUS,OV
+    bcf         STATUS,C
     addwf       PRSumL,f
-    btfsc       STATUS,OV
+    btfsc       STATUS,C
     incf        PRSumH
     movf        Resistor3,w
-    bcf         STATUS,OV
+    bcf         STATUS,C
     addwf       PRSumL,f
-    btfsc       STATUS,OV
+    btfsc       STATUS,C
     incf        PRSumH
     movf        Resistor4,w
-    bcf         STATUS,OV
+    bcf         STATUS,C
     addwf       PRSumL,f
-    btfsc       STATUS,OV
+    btfsc       STATUS,C
     incf        PRSumH
     movf        Resistor5,w
-    bcf         STATUS,OV
+    bcf         STATUS,C
     addwf       PRSumL,f
-    btfsc       STATUS,OV
+    btfsc       STATUS,C
     incf        PRSumH
     movf        Resistor6,w
-    bcf         STATUS,OV
+    bcf         STATUS,C
     addwf       PRSumL,f
-    btfsc       STATUS,OV
+    btfsc       STATUS,C
     incf        PRSumH
 
-    BinToBCD    PRSumL,PRSumH
+    movf        PRSumH,w
+    movwf       NumHigh
+    movf        PRSumL,w
+    movwf       NumMed
+    BinToBCD    NumMed,NumHigh
     swapf       BCDH,w
     andlw       0x0F
     movwf       BCDDISPLAY
