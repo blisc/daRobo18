@@ -300,7 +300,7 @@ RTC_init
 ;RTC SET-UP stuFFs
     call 	   i2c_common_setup
     ;rtc_resetAll
-   ;call	   set_rtc_time
+    ;call	   set_rtc_time
     return
 
 ;Enables RB1 pin, Sets RB1 to high and TMR0 to low priority
@@ -1051,12 +1051,17 @@ SumPR
     goto        Set2LED
     movlw       d'0'
     cpfsgt      PRSumH
-    goto        Set1LED
+    goto        SumPRL
     movlw       d'44'
-    cpfsgt      PRSumL
+    cpfslt      PRSumL
     goto        Set1LED
     goto        Set2LED
-    return
+
+SumPRL
+    movlw       d'75'
+    cpfslt      PRSumL
+    goto        Set1LED
+    goto        Set0LED
 
 TestPR1
     movlw       d'100'
@@ -1472,11 +1477,11 @@ set_rtc_time
 
 		;set time
 		rtc_set	0x06,	B'00010100'		; Year
-		rtc_set	0x05,	B'00000010'		; Month
-		rtc_set	0x04,	B'00100011'		; Date
-		rtc_set	0x03,	B'00000111'		; Day
-		rtc_set	0x02,	B'00010110'		; Hours
-		rtc_set	0x01,	B'00101000'		; Minutes
+		rtc_set	0x05,	B'00000011'		; Month
+		rtc_set	0x04,	B'00100100'		; Date
+		rtc_set	0x03,	B'00000001'		; Day
+		rtc_set	0x02,	B'00010011'		; Hours
+		rtc_set	0x01,	B'00100001'		; Minutes
 		rtc_set	0x00,	B'00000000'		; Seconds
 		return
 ;;TAKEN FROM DATA SHEET
