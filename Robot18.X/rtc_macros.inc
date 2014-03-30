@@ -1,3 +1,4 @@
+;Entire file taken from http://www.pml4all.org/
 	;External labels
 	extern	write_rtc,read_rtc,rtc_convert,i2c_common_setup
 

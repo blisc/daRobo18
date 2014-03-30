@@ -1,3 +1,4 @@
+;Entire file taken from http://www.pml4all.org/
 #include <p18f4620.inc>
 
 ;allocates memory for below variables in Data Memory
@@ -7,11 +8,10 @@ lcd_d2	res	1
 com		res	1
 dat		res	1
 
-;constans cause Emami be lazy
     #define	RS 	PORTD,2
     #define	E 	PORTD,3
 
-;DAT Delay Macro
+;Delays
 LCD_DELAY macro
 	movlw   0x23
 	movwf   lcd_d1
@@ -19,21 +19,12 @@ LCD_DELAY macro
 	goto    $-2
 	endm
 
-    ;org and deiaply functions
 	code
     global  LCD_Init,WR_INS,WR_DATA,Clear_LCD,Line1,Line2
 
 ;Initializes LCD for 4-bit input
 ;Sends 0011 three tims to reset LCD, then sets LCD to 4-bit input with 2
 ;lines with 5*7 dots
-;LCD_Init
-;    movlw   b'00110011'
-;    call    WR_INS
-;    movlw   b'00110010'
-;    call    WR_INS
-;    movlw   b'00101000'     ;4 bits, 2 lines, 5x7 dots 
-;    call    WR_INS
-
 LCD_Init
 	bsf     E                ;E default high
 
@@ -138,7 +129,7 @@ Line1
     call    WR_INS
     return
 
-;delays..C&P
+;Delays
 lcdLongDelay
     movlw   d'80'
     movwf   lcd_d2
